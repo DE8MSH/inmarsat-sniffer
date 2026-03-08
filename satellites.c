@@ -1,0 +1,224 @@
+/*
+ * Built-in satellite channel frequency tables
+ *
+ * Copyright (c) 2026 CEMAXECUTER LLC
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ */
+
+#include <stdio.h>
+#include <string.h>
+#include <strings.h>
+
+#include "satellites.h"
+
+/*
+ * Channel tables for known Inmarsat satellites.
+ * Frequencies are from publicly available L-band surveys.
+ * These are relatively static -- Inmarsat rarely changes allocations.
+ *
+ * Aero channel frequencies for 4F3 (98W, AORW) are well-documented.
+ * Other satellites have partial tables -- will be filled in as data
+ * becomes available.
+ */
+
+/* I4-F3 (98W, AORW) -- Americas region
+ * Frequencies from SDRReceiver 98W config (verified against live signals). */
+static const channel_def_t channels_4f3[] = {
+    /* STD-C EGC (NCS common) -- channel 0 by convention */
+    { 1537700000.0, CHAN_STDC_EGC,   0 },
+
+    /* Aero 600 baud channels */
+    { 1545021000.0, CHAN_AERO_600,  1 },
+    { 1545051000.0, CHAN_AERO_600,  2 },
+    { 1545061000.0, CHAN_AERO_600,  3 },
+    { 1545066000.0, CHAN_AERO_600,  4 },
+    { 1545081000.0, CHAN_AERO_600,  5 },
+    { 1545086000.0, CHAN_AERO_600,  6 },
+    { 1545091000.0, CHAN_AERO_600,  7 },
+    { 1545101000.0, CHAN_AERO_600,  8 },
+    { 1545111000.0, CHAN_AERO_600,  9 },
+    { 1545171000.0, CHAN_AERO_600, 10 },
+    { 1545176000.0, CHAN_AERO_600, 11 },
+
+    /* Aero 1200 baud channels */
+    { 1545076000.0, CHAN_AERO_1200, 12 },
+
+    /* Aero 10500 baud channels */
+    { 1545995000.0, CHAN_AERO_10500, 13 },
+    { 1546010000.0, CHAN_AERO_10500, 14 },
+    { 1546055000.0, CHAN_AERO_10500, 15 },
+    { 1546070000.0, CHAN_AERO_10500, 16 },
+
+    /* Aero 8400 baud (C-channel, voice + data) */
+    { 1546135300.0, CHAN_AERO_8400, 17 },
+    { 1546140500.0, CHAN_AERO_8400, 18 },
+    { 1546145700.0, CHAN_AERO_8400, 19 },
+    { 1546150300.0, CHAN_AERO_8400, 20 },
+    { 1546155500.0, CHAN_AERO_8400, 21 },
+    { 1546160600.0, CHAN_AERO_8400, 22 },
+    { 1546166300.0, CHAN_AERO_8400, 23 },
+    { 1546171430.0, CHAN_AERO_8400, 24 },
+    { 1546176430.0, CHAN_AERO_8400, 25 },
+    { 1546181430.0, CHAN_AERO_8400, 26 },
+    { 1546186430.0, CHAN_AERO_8400, 27 },
+};
+
+/* I3-F5 (54W, AORE) -- Atlantic East
+ * Frequencies from SDRReceiver 54W config. */
+static const channel_def_t channels_3f5[] = {
+    { 1541450000.0, CHAN_STDC_EGC,   0 },
+
+    /* Aero 600 baud channels */
+    { 1545014429.0, CHAN_AERO_600,  1 },
+    { 1545029412.0, CHAN_AERO_600,  2 },
+    { 1545134635.0, CHAN_AERO_600,  3 },
+    { 1545194731.0, CHAN_AERO_600,  4 },
+
+    /* Aero 10500 baud channels */
+    { 1546045422.0, CHAN_AERO_10500, 5 },
+    { 1546061717.0, CHAN_AERO_10500, 6 },
+
+    /* Aero 8400 baud channels */
+    { 1546817935.0, CHAN_AERO_8400,  7 },
+    { 1546823426.0, CHAN_AERO_8400,  8 },
+    { 1546828110.0, CHAN_AERO_8400,  9 },
+    { 1546833112.0, CHAN_AERO_8400, 10 },
+    { 1546838105.0, CHAN_AERO_8400, 11 },
+    { 1546842770.0, CHAN_AERO_8400, 12 },
+    { 1546848155.0, CHAN_AERO_8400, 13 },
+    { 1546853237.0, CHAN_AERO_8400, 14 },
+};
+
+/* I4-AF1 (25E, IOR) -- Indian Ocean
+ * Frequencies from SDRReceiver 25E config. */
+static const channel_def_t channels_af1[] = {
+    { 1537950000.0, CHAN_STDC_EGC,   0 },
+
+    /* Aero 600 baud channels */
+    { 1545005146.0, CHAN_AERO_600,  1 },
+    { 1545214573.0, CHAN_AERO_600,  2 },
+    { 1545219706.0, CHAN_AERO_600,  3 },
+    { 1545224996.0, CHAN_AERO_600,  4 },
+    { 1545114134.0, CHAN_AERO_600,  5 },
+    { 1545119063.0, CHAN_AERO_600,  6 },
+    { 1545129563.0, CHAN_AERO_600,  7 },
+    { 1545159288.0, CHAN_AERO_600,  8 },
+    { 1545164682.0, CHAN_AERO_600,  9 },
+    { 1545183905.0, CHAN_AERO_600, 10 },
+    { 1545189244.0, CHAN_AERO_600, 11 },
+
+    /* Aero 1200 baud channels */
+    { 1545124261.0, CHAN_AERO_1200, 12 },
+
+    /* Aero 10500 baud channels */
+    { 1546005300.0, CHAN_AERO_10500, 13 },
+    { 1546019800.0, CHAN_AERO_10500, 14 },
+    { 1546034700.0, CHAN_AERO_10500, 15 },
+    { 1546084600.0, CHAN_AERO_10500, 16 },
+    { 1546099900.0, CHAN_AERO_10500, 17 },
+    { 1546114200.0, CHAN_AERO_10500, 18 },
+
+    /* Aero 8400 baud channels */
+    { 1546137300.0, CHAN_AERO_8400, 19 },
+    { 1546142500.0, CHAN_AERO_8400, 20 },
+    { 1546147700.0, CHAN_AERO_8400, 21 },
+    { 1546152300.0, CHAN_AERO_8400, 22 },
+    { 1546157500.0, CHAN_AERO_8400, 23 },
+    { 1546162600.0, CHAN_AERO_8400, 24 },
+    { 1546168300.0, CHAN_AERO_8400, 25 },
+    { 1546173430.0, CHAN_AERO_8400, 26 },
+    { 1546178430.0, CHAN_AERO_8400, 27 },
+};
+
+/* I4-F1 (143.5E, POR) -- Pacific Ocean
+ * TODO: no SDRReceiver config available, needs verification */
+static const channel_def_t channels_f1[] = {
+    { 1541450000.0, CHAN_STDC_EGC,   0 },
+    { 1545100000.0, CHAN_AERO_600,  1 },
+    { 1546050000.0, CHAN_AERO_10500, 2 },
+    { 1546150000.0, CHAN_AERO_8400, 3 },
+};
+
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
+static const satellite_t satellites[] = {
+    {
+        .name = "I4-F3",
+        .designator = "4F3",
+        .position = -98.0,
+        .region = "AORW",
+        /* STD-C NCS is on a different sub-band (~1537 MHz). --mode=full
+         * covers both; Aero-only modes ignore this. */
+        .stdc_egc_freq = 1537700000.0,
+        .channels = channels_4f3,
+        .num_channels = ARRAY_SIZE(channels_4f3),
+        .freq_min = 1537700000.0,
+        .freq_max = 1546186430.0,
+    },
+    {
+        .name = "I3-F5",
+        .designator = "3F5",
+        .position = -54.0,
+        .region = "AORE",
+        .stdc_egc_freq = 1541450000.0,
+        .channels = channels_3f5,
+        .num_channels = ARRAY_SIZE(channels_3f5),
+        .freq_min = 1541450000.0,
+        .freq_max = 1546853237.0,
+    },
+    {
+        .name = "I4-AF1",
+        .designator = "AF1",
+        .position = 25.0,
+        .region = "IOR",
+        .stdc_egc_freq = 1537950000.0,
+        .channels = channels_af1,
+        .num_channels = ARRAY_SIZE(channels_af1),
+        .freq_min = 1537950000.0,
+        .freq_max = 1546178430.0,
+    },
+    {
+        .name = "I4-F1",
+        .designator = "F1",
+        .position = 143.5,
+        .region = "POR",
+        .stdc_egc_freq = 1541450000.0,
+        .channels = channels_f1,
+        .num_channels = ARRAY_SIZE(channels_f1),
+        .freq_min = 1541450000.0,
+        .freq_max = 1546150000.0,
+    },
+};
+
+const satellite_t *satellite_lookup(const char *designator) {
+    for (size_t i = 0; i < ARRAY_SIZE(satellites); i++) {
+        if (strcasecmp(satellites[i].designator, designator) == 0)
+            return &satellites[i];
+    }
+    return NULL;
+}
+
+void satellite_list(void) {
+    fprintf(stderr, "Known Inmarsat satellites (--satellite=DESIGNATOR):\n\n");
+    fprintf(stderr, "  %-12s %-8s %-6s %-8s %s\n",
+            "Satellite", "Pos", "Region", "Channels", "STD-C EGC");
+    fprintf(stderr, "  %-12s %-8s %-6s %-8s %s\n",
+            "---------", "---", "------", "--------", "---------");
+
+    for (size_t i = 0; i < ARRAY_SIZE(satellites); i++) {
+        const satellite_t *s = &satellites[i];
+        int aero_count = 0;
+        int stdc_count = 0;
+        for (int j = 0; j < s->num_channels; j++) {
+            if (s->channels[j].type == CHAN_STDC_EGC)
+                stdc_count++;
+            else
+                aero_count++;
+        }
+        fprintf(stderr, "  %-12s %+.1f%s  %-6s %d aero   %.3f MHz\n",
+                s->name, s->position,
+                s->position < 0 ? "W" : "E",
+                s->region, aero_count,
+                s->stdc_egc_freq / 1e6);
+    }
+}
