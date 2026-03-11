@@ -48,6 +48,10 @@ set(SOURCES
     ${PROJECT_SOURCE_DIR}/main.c
     ${PROJECT_SOURCE_DIR}/options.c
     ${PROJECT_SOURCE_DIR}/satellites.c
+    ${PROJECT_SOURCE_DIR}/channelizer.c
+    ${PROJECT_SOURCE_DIR}/demod_dbpsk.c
+    ${PROJECT_SOURCE_DIR}/viterbi.c
+    ${PROJECT_SOURCE_DIR}/stdc_decode.c
     ${PROJECT_SOURCE_DIR}/vita49.c
 )
 
