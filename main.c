@@ -40,6 +40,9 @@
 #include "demod_dbpsk.h"
 #include "stdc_decode.h"
 #include "vita49.h"
+#include "feed.h"
+#include "web.h"
+#include "aero_decode.h"
 #include "simd_kernels.h"
 
 #define C_FEK_BLOCKING_QUEUE_IMPLEMENTATION
@@ -224,6 +227,9 @@ static void stdc_message_cb(const stdc_message_t *msg, void *user) {
     (void)user;
     const char *type_str = get_stdc_type_str(msg->type);
     fprintf(stderr, "\n[%s] %s\n", type_str, msg->text);
+    feed_stdc_message(msg);
+    if (web_enabled)
+        web_add_stdc(msg);
 }
 
 static void stdc_bits_cb(const float *soft_bits, int num_bits, void *user) {
@@ -247,7 +253,14 @@ int main(int argc, char **argv) {
 
     simd_init(0);
 
+    feed_init();
+
     fprintf(stderr, "inmarsat-sniffer starting\n");
+
+    if (web_enabled) {
+        if (web_init(web_port) != 0)
+            errx(1, "Failed to start web dashboard");
+    }
 
     const satellite_t *sat = NULL;
     if (satellite_name) {

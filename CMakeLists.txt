@@ -52,6 +52,8 @@ set(SOURCES
     ${PROJECT_SOURCE_DIR}/demod_dbpsk.c
     ${PROJECT_SOURCE_DIR}/viterbi.c
     ${PROJECT_SOURCE_DIR}/stdc_decode.c
+    ${PROJECT_SOURCE_DIR}/feed.c
+    ${PROJECT_SOURCE_DIR}/web.c
     ${PROJECT_SOURCE_DIR}/vita49.c
 )
 
