@@ -57,6 +57,32 @@ set(SOURCES
     ${PROJECT_SOURCE_DIR}/vita49.c
 )
 
+# JAERO DSP library (C++ with C API, stripped of Qt)
+set(JAERO_DSP_SOURCES
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/DSP.cpp
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/burstmskdemodulator.cpp
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/burstoqpskdemodulator.cpp
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/mskdemodulator.cpp
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/coarsefreqestimate.cpp
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/fftrwrapper.cpp
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/fftwrapper.cpp
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/jfft.cpp
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/jconvolutionalcodec.cpp
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/aerol.cpp
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/jaero_demod.cpp
+)
+list(APPEND SOURCES ${JAERO_DSP_SOURCES})
+include_directories(${PROJECT_SOURCE_DIR}/jaero_dsp)
+
+# Optional ZMQ for JAERO-compatible audio output
+find_library(ZMQ_LIB zmq)
+find_path(ZMQ_INC zmq.h)
+if(ZMQ_LIB AND ZMQ_INC)
+    set(ZMQ_FOUND TRUE)
+    list(APPEND SOURCES ${PROJECT_SOURCE_DIR}/zmq_audio.c)
+    include_directories(${ZMQ_INC})
+endif()
+
 if(SOAPYSDR_FOUND)
     list(APPEND SOURCES ${PROJECT_SOURCE_DIR}/soapysdr.c)
     include_directories(${SOAPYSDR_INCLUDE_DIR})
@@ -77,7 +103,17 @@ add_executable(inmarsat-sniffer ${SOURCES})
 target_link_libraries(inmarsat-sniffer PRIVATE
     Threads::Threads
     m
+    stdc++
+    correct
 )
+
+if(ZMQ_FOUND)
+    target_link_libraries(inmarsat-sniffer PRIVATE ${ZMQ_LIB})
+    target_compile_definitions(inmarsat-sniffer PRIVATE HAVE_ZMQ)
+    message(STATUS "ZMQ: enabled (JAERO audio output)")
+else()
+    message(STATUS "ZMQ: not found (JAERO output disabled)")
+endif()
 
 if(SOAPYSDR_FOUND)
     target_link_libraries(inmarsat-sniffer PRIVATE ${SOAPYSDR_LIBRARIES})
