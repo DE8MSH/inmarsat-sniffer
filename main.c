@@ -28,6 +28,123 @@
 #include "sdrplay.h"
 #endif
 
+#ifdef HAVE_ZMQ
+#include "zmq_audio.h"
+int zmq_enabled = 0;
+int zmq_base_port = 6001;
+#endif
+
+#include "jaero_dsp/jaero_demod.h"
+#define MAX_JAERO_DEMODS 32
+#define AUDIO_CENTER_HZ 8000.0
+#define PMSK_AUDIO_HZ   1000.0
+#define AUDIO_GAIN 5.0
+
+#define CHAN_RING_SIZE (1 << 18)
+
+typedef struct {
+    jaero_pmsk_demod_t  *pmsk;
+    jaero_msk_demod_t   *burstmsk;
+    jaero_oqpsk_demod_t *oqpsk;
+    int channel_id;
+    int baud_rate;
+    int channel_type;
+    double sample_rate;
+    double mixer_phase;
+    double mixer_inc;
+
+    float complex *ring;
+    atomic_uint ring_head;
+    atomic_uint ring_tail;
+    atomic_ulong drops;
+
+    pthread_t thread;
+    atomic_int thread_run;
+} jaero_chan_t;
+
+static jaero_chan_t jaero_chans[MAX_JAERO_DEMODS];
+static int num_jaero_chans = 0;
+
+static void *chan_worker_fn(void *arg)
+{
+    jaero_chan_t *jc = (jaero_chan_t *)arg;
+    const int BATCH = 4096;
+    float complex batch[BATCH];
+    double iq_dbl[BATCH * 2];
+
+    while (atomic_load(&jc->thread_run)) {
+        unsigned head = atomic_load(&jc->ring_head);
+        unsigned tail = atomic_load(&jc->ring_tail);
+        unsigned avail = head - tail;
+        if (avail == 0) {
+            struct timespec ts = {0, 500 * 1000};
+            nanosleep(&ts, NULL);
+            continue;
+        }
+        unsigned take = avail;
+        if (take > BATCH) take = BATCH;
+        unsigned tail_mod = tail & (CHAN_RING_SIZE - 1);
+        unsigned first = CHAN_RING_SIZE - tail_mod;
+        if (first > take) first = take;
+        memcpy(batch, &jc->ring[tail_mod], first * sizeof(float complex));
+        if (take > first)
+            memcpy(&batch[first], &jc->ring[0], (take - first) * sizeof(float complex));
+        atomic_store(&jc->ring_tail, tail + take);
+
+        if (jc->pmsk) {
+            for (unsigned i = 0; i < take; i++) {
+                iq_dbl[i*2]   = crealf(batch[i]);
+                iq_dbl[i*2+1] = cimagf(batch[i]);
+            }
+            jaero_pmsk_feed_iq(jc->pmsk, iq_dbl, take);
+        } else if (jc->oqpsk) {
+            int16_t pcm[BATCH];
+            for (unsigned i = 0; i < take; i++) {
+                double ca = cos(jc->mixer_phase);
+                double sa = sin(jc->mixer_phase);
+                double audio = creal((double complex)batch[i] * (ca + sa * I));
+                jc->mixer_phase += jc->mixer_inc;
+                if (jc->mixer_phase > 2.0 * M_PI) jc->mixer_phase -= 2.0 * M_PI;
+                double scaled = audio * AUDIO_GAIN * 32768.0;
+                if (scaled > 32767.0) scaled = 32767.0;
+                if (scaled < -32768.0) scaled = -32768.0;
+                pcm[i] = (int16_t)scaled;
+            }
+            jaero_oqpsk_feed(jc->oqpsk, pcm, take);
+        }
+    }
+    return NULL;
+}
+
+static void chan_push(jaero_chan_t *jc, const float complex *samples, int n)
+{
+    unsigned head = atomic_load(&jc->ring_head);
+    unsigned tail = atomic_load(&jc->ring_tail);
+    unsigned free_slots = CHAN_RING_SIZE - (head - tail);
+    if ((unsigned)n > free_slots) {
+        atomic_fetch_add(&jc->drops, 1);
+        n = (int)free_slots;
+        if (n <= 0) return;
+    }
+    unsigned head_mod = head & (CHAN_RING_SIZE - 1);
+    unsigned first = CHAN_RING_SIZE - head_mod;
+    if ((unsigned)first > (unsigned)n) first = (unsigned)n;
+    memcpy(&jc->ring[head_mod], samples, first * sizeof(float complex));
+    if ((unsigned)n > first)
+        memcpy(&jc->ring[0], &samples[first], ((unsigned)n - first) * sizeof(float complex));
+    atomic_store(&jc->ring_head, head + (unsigned)n);
+}
+
+static void chan_init_thread(jaero_chan_t *jc)
+{
+    jc->ring = (float complex *)malloc(CHAN_RING_SIZE * sizeof(float complex));
+    atomic_init(&jc->ring_head, 0);
+    atomic_init(&jc->ring_tail, 0);
+    atomic_init(&jc->drops, 0);
+    atomic_init(&jc->thread_run, 1);
+    pthread_create(&jc->thread, NULL, chan_worker_fn, jc);
+}
+
 #ifdef HAVE_RTLSDR
 #include "rtlsdr.h"
 #endif
@@ -39,10 +156,10 @@
 #include "channelizer.h"
 #include "demod_dbpsk.h"
 #include "stdc_decode.h"
+#include "aero_decode.h"
 #include "vita49.h"
 #include "feed.h"
 #include "web.h"
-#include "aero_decode.h"
 #include "simd_kernels.h"
 
 #define C_FEK_BLOCKING_QUEUE_IMPLEMENTATION
@@ -74,26 +191,6 @@ int soapy_gain_elem_count = 0;
 
 double soapy_gain_val = 40.0;
 int bias_tee = 0;
-int vita49_enabled = 0;
-char *vita49_endpoint = NULL;
-int web_enabled = 0;
-int web_port = 8888;
-int feed_enabled = 0;
-#define UDP_MAX 4
-char *udp_hosts[UDP_MAX];
-int udp_ports[UDP_MAX];
-int udp_count = 0;
-int basestation_enabled = 0;
-char *basestation_endpoint = NULL;
-char *aircraft_db_path = NULL;
-int update_db_flag = 0;
-char *station_id = NULL;
-int mqtt_enabled = 0;
-char *mqtt_host = NULL;
-int mqtt_port = 1883;
-char *mqtt_user = NULL;
-char *mqtt_pass = NULL;
-char *mqtt_topic = NULL;
 
 #ifdef HAVE_SDRPLAY
 char *sdrplay_serial = NULL;
@@ -116,6 +213,26 @@ int bladerf_gain_val = 40;
 char *usrp_serial = NULL;
 int usrp_gain_val = 40;
 #endif
+int vita49_enabled = 0;
+char *vita49_endpoint = NULL;
+int web_enabled = 0;
+int web_port = 8888;
+int feed_enabled = 0;
+#define UDP_MAX 4
+char *udp_hosts[UDP_MAX];
+int udp_ports[UDP_MAX];
+int udp_count = 0;
+int mqtt_enabled = 0;
+char *mqtt_host = NULL;
+int mqtt_port = 1883;
+char *mqtt_user = NULL;
+char *mqtt_pass = NULL;
+char *mqtt_topic = NULL;
+int basestation_enabled = 0;
+char *basestation_endpoint = NULL;
+char *aircraft_db_path = NULL;
+int update_db_flag = 0;
+char *station_id = NULL;
 
 FILE *in_file = NULL;
 volatile sig_atomic_t running = 1;
@@ -132,8 +249,17 @@ atomic_ulong stat_aero_frames = 0;
 atomic_ulong stat_drops = 0;
 atomic_ulong stat_stdc_crc_ok = 0;
 atomic_ulong stat_stdc_crc_fail = 0;
+atomic_ulong stat_aero_crc_ok = 0;
+atomic_ulong stat_aero_crc_fail = 0;
+atomic_ulong stat_aero_bursts = 0;
+atomic_ulong stat_aero_msgs = 0;
+atomic_ulong stat_pos_adsc = 0;
+atomic_ulong stat_pos_text = 0;
+atomic_ulong stat_pos_waypoint = 0;
 atomic_ulong stat_stdc_ber_sum = 0;
 atomic_ulong stat_stdc_ber_count = 0;
+atomic_ulong stat_aero_ber_sum = 0;
+atomic_ulong stat_aero_ber_count = 0;
 atomic_int  stat_stdc_synced = 0;
 
 void push_samples(sample_buf_t *buf) {
@@ -171,6 +297,16 @@ static void *spewer_thread(void *arg) {
             free(tmp);
             break;
         }
+        case FMT_CI16: {
+            s = malloc(sizeof(*s) + block * 2);
+            s->format = SAMPLE_FMT_INT8;
+            int16_t *tmp = malloc(block * 4);
+            r = fread(tmp, 4, block, f);
+            for (size_t i = 0; i < r * 2; i++)
+                s->samples[i] = (int8_t)(tmp[i] >> 8);
+            free(tmp);
+            break;
+        }
         case FMT_CF32:
             s = malloc(sizeof(*s) + block * 8);
             s->format = SAMPLE_FMT_FLOAT;
@@ -202,15 +338,21 @@ static void print_status(void) {
     unsigned long sb_sum = atomic_load(&stat_stdc_ber_sum);
     unsigned long sb_cnt = atomic_load(&stat_stdc_ber_count);
     int synced = atomic_load(&stat_stdc_synced);
+    unsigned long bursts = atomic_load(&stat_aero_bursts);
+    unsigned long msgs = atomic_load(&stat_aero_msgs);
+    unsigned long ac_ok = atomic_load(&stat_aero_crc_ok);
     float stdc_ber = sb_cnt ? (float)sb_sum / (sb_cnt * 10000.0f) : 0;
-    fprintf(stderr, "\r[STD-C: %lu %s BER:%.2f CRC:%lu/%lu | drop:%lu]   ",
+    fprintf(stderr, "\r[STD-C: %lu %s BER:%.2f CRC:%lu/%lu | "
+            "Aero: %lu bursts %lu msgs CRC:%lu | drop:%lu]   ",
             stdc, synced ? "SYNC" : "SRCH",
-            stdc_ber, sc_ok, sc_ok + sc_fail, drops);
+            stdc_ber, sc_ok, sc_ok + sc_fail,
+            bursts, msgs, ac_ok, drops);
 }
 
 static dbpsk_demod_t *stdc_demod = NULL;
 static stdc_decoder_t *stdc_decoder = NULL;
 static channelizer_t *channelizer = NULL;
+static int next_dynamic_channel_id = 100;
 
 static const char *get_stdc_type_str(stdc_msg_type_t type) {
     switch (type) {
@@ -238,12 +380,88 @@ static void stdc_bits_cb(const float *soft_bits, int num_bits, void *user) {
         stdc_decoder_feed(stdc_decoder, soft_bits, num_bits);
 }
 
+/* JAERO demod callback — counts bursts for status line. AeroL handles decode. */
+static void jaero_bits_cb(const unsigned char *bits, int num_bits,
+                            int channel_id, void *user) {
+    (void)user; (void)bits; (void)num_bits; (void)channel_id;
+    atomic_fetch_add(&stat_aero_bursts, 1);
+}
+
 static void channel_output_cb(int channel_id, channel_type_t type,
                                 float complex *samples, int num_samples,
                                 void *user) {
-    (void)user; (void)channel_id;
+    (void)user;
+
+#ifdef HAVE_ZMQ
+    if (zmq_enabled) {
+        double output_rate = channelizer_output_rate(channelizer, channel_id);
+        if (output_rate > 0)
+            zmq_audio_send(channel_id, samples, num_samples, output_rate);
+    }
+#endif
+
     if (type == CHAN_STDC_EGC && stdc_demod) {
         dbpsk_demod_process(stdc_demod, samples, num_samples);
+        return;
+    }
+
+    if (type == CHAN_AERO_600 || type == CHAN_AERO_1200) {
+        int baud = (type == CHAN_AERO_1200) ? 1200 : 600;
+        double output_rate = channelizer_output_rate(channelizer, channel_id);
+        if (output_rate <= 0) return;
+
+        jaero_chan_t *jc = NULL;
+        for (int i = 0; i < num_jaero_chans; i++) {
+            if (jaero_chans[i].channel_id == channel_id) { jc = &jaero_chans[i]; break; }
+        }
+        if (!jc && num_jaero_chans < MAX_JAERO_DEMODS) {
+            jc = &jaero_chans[num_jaero_chans++];
+            jc->channel_id = channel_id;
+            jc->baud_rate = baud;
+            jc->pmsk = NULL;
+            jc->burstmsk = NULL;
+            jc->oqpsk = NULL;
+            jc->mixer_phase = 0;
+            jc->mixer_inc = 2.0 * M_PI * PMSK_AUDIO_HZ / output_rate;
+            jc->pmsk = jaero_pmsk_create(output_rate, (double)baud,
+                                          channel_id, jaero_bits_cb, NULL);
+            fprintf(stderr, "[PMSK ch%d] baud=%d rate=%.0f\n",
+                    channel_id, baud, output_rate);
+            if (jc->pmsk)
+                chan_init_thread(jc);
+        }
+        if (!jc || !jc->pmsk) return;
+        chan_push(jc, samples, num_samples);
+        return;
+    }
+
+    if (type == CHAN_AERO_8400 || type == CHAN_AERO_10500) {
+        int baud = (type == CHAN_AERO_10500) ? 10500 : 8400;
+        double output_rate = channelizer_output_rate(channelizer, channel_id);
+        if (output_rate <= 0) return;
+
+        jaero_chan_t *jc = NULL;
+        for (int i = 0; i < num_jaero_chans; i++) {
+            if (jaero_chans[i].channel_id == channel_id) { jc = &jaero_chans[i]; break; }
+        }
+        if (!jc && num_jaero_chans < MAX_JAERO_DEMODS) {
+            jc = &jaero_chans[num_jaero_chans++];
+            jc->channel_id = channel_id;
+            jc->baud_rate = baud;
+            jc->pmsk = NULL;
+            jc->burstmsk = NULL;
+            jc->mixer_phase = 0;
+            jc->mixer_inc = 2.0 * M_PI * AUDIO_CENTER_HZ / output_rate;
+            jc->oqpsk = jaero_oqpsk_create(output_rate, (double)baud,
+                                             channel_id, jaero_bits_cb, NULL);
+            fprintf(stderr, "[OQPSK-INIT] ch%d baud=%d rate=%.0f\n",
+                    channel_id, baud, output_rate);
+            if (jc->oqpsk)
+                chan_init_thread(jc);
+        }
+        if (!jc || !jc->oqpsk) return;
+        chan_push(jc, samples, num_samples);
+        return;
     }
 }
 
@@ -252,10 +470,7 @@ int main(int argc, char **argv) {
     parse_options(argc, argv);
 
     simd_init(0);
-
     feed_init();
-
-    fprintf(stderr, "inmarsat-sniffer starting\n");
 
     if (web_enabled) {
         if (web_init(web_port) != 0)
@@ -271,11 +486,13 @@ int main(int argc, char **argv) {
 
         double lo = 1e12, hi = 0;
         for (int i = 0; i < sat->num_channels; i++) {
+            if (op_mode == MODE_AERO && sat->channels[i].type == CHAN_STDC_EGC) continue;
+            if (op_mode == MODE_STDC && sat->channels[i].type != CHAN_STDC_EGC) continue;
             if (sat->channels[i].frequency < lo) lo = sat->channels[i].frequency;
             if (sat->channels[i].frequency > hi) hi = sat->channels[i].frequency;
         }
-        if (center_freq == 0)
-            center_freq = (lo + hi) / 2.0;
+        if (lo > hi) { lo = sat->freq_min; hi = sat->freq_max; }
+        if (center_freq == 0) center_freq = (lo + hi) / 2.0;
         if (samp_rate == 0) {
             samp_rate = (hi - lo) * 1.2;
             if (samp_rate < 2400000) samp_rate = 2400000;
@@ -293,6 +510,13 @@ int main(int argc, char **argv) {
 
     blocking_queue_init(&samples_queue, SAMPLES_QUEUE_SIZE);
     blocking_queue_init(&decoded_queue, DECODED_QUEUE_SIZE);
+
+#ifdef HAVE_ZMQ
+    if (zmq_enabled) {
+        if (zmq_audio_init(zmq_base_port) != 0)
+            errx(1, "Failed to initialize ZMQ audio");
+    }
+#endif
 
     pthread_t input_tid;
     void *rtl_dev = NULL;
@@ -333,20 +557,21 @@ int main(int argc, char **argv) {
         if (!channelizer)
             errx(1, "Failed to create channelizer");
 
+        int added = 0;
         for (int i = 0; i < sat->num_channels; i++) {
             const channel_def_t *cd = &sat->channels[i];
             double offset = fabs(cd->frequency - center_freq);
             if (offset > samp_rate / 2.0) continue;
             if (op_mode == MODE_AERO && cd->type == CHAN_STDC_EGC) continue;
             if (op_mode == MODE_STDC && cd->type != CHAN_STDC_EGC) continue;
-            channelizer_add_channel(channelizer, cd->frequency,
-                                     cd->type, cd->channel_id);
+            if (channelizer_add_channel(channelizer, cd->frequency,
+                                         cd->type, cd->channel_id) == 0)
+                added++;
         }
+        fprintf(stderr, "Channelizer: %d channels active\n", added);
 
-        /* Initialize STD-C demod/decode chain */
         for (int i = 0; i < sat->num_channels; i++) {
-            if (sat->channels[i].type == CHAN_STDC_EGC &&
-                (op_mode != MODE_AERO)) {
+            if (sat->channels[i].type == CHAN_STDC_EGC && op_mode != MODE_AERO) {
                 double output_rate = samp_rate / (int)(samp_rate / (1200.0 * 4.0));
                 stdc_decoder = stdc_decoder_create(stdc_message_cb, NULL);
                 stdc_demod = dbpsk_demod_create(output_rate, 1200.0,
@@ -355,6 +580,19 @@ int main(int argc, char **argv) {
                     fprintf(stderr, "STD-C EGC decoder: active\n");
                 break;
             }
+        }
+
+        if (op_mode != MODE_STDC) {
+            int have_aero = 0;
+            for (int i = 0; i < sat->num_channels; i++) {
+                channel_type_t ct = sat->channels[i].type;
+                if (ct == CHAN_AERO_600 || ct == CHAN_AERO_1200 ||
+                    ct == CHAN_AERO_8400 || ct == CHAN_AERO_10500) {
+                    have_aero = 1; break;
+                }
+            }
+            if (have_aero)
+                fprintf(stderr, "Aero decoder: JAERO/AeroL embedded\n");
         }
     }
 
@@ -389,8 +627,27 @@ int main(int argc, char **argv) {
     pthread_join(input_tid, NULL);
 
     dbpsk_demod_destroy(stdc_demod);
+    for (int i = 0; i < num_jaero_chans; i++) {
+        if (jaero_chans[i].ring) {
+            atomic_store(&jaero_chans[i].thread_run, 0);
+            pthread_join(jaero_chans[i].thread, NULL);
+        }
+    }
+    for (int i = 0; i < num_jaero_chans; i++) {
+        if (jaero_chans[i].pmsk)  jaero_pmsk_destroy(jaero_chans[i].pmsk);
+        if (jaero_chans[i].oqpsk) jaero_oqpsk_destroy(jaero_chans[i].oqpsk);
+        free(jaero_chans[i].ring);
+        jaero_chans[i].ring = NULL;
+    }
     stdc_decoder_destroy(stdc_decoder);
     channelizer_destroy(channelizer);
+
+#ifdef HAVE_ZMQ
+    if (zmq_enabled) {
+        extern void zmq_audio_destroy(void);
+        zmq_audio_destroy();
+    }
+#endif
 
     return 0;
 }
