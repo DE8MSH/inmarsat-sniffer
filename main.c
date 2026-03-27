@@ -380,6 +380,42 @@ static void stdc_bits_cb(const float *soft_bits, int num_bits, void *user) {
         stdc_decoder_feed(stdc_decoder, soft_bits, num_bits);
 }
 
+/* JAERO aerol ACARS callback: receives decoded ACARS userdata from AeroL's
+ * full chain — Viterbi, descramble, RS FEC, ISU, ACARS validation.
+ * Only fires when acarsitem.valid is true (CRC pass). */
+static void jaero_acars_data_cb(const uint8_t *data, int len,
+                                  int channel_id, void *user) {
+    (void)user;
+    atomic_fetch_add(&stat_aero_msgs, 1);
+    atomic_fetch_add(&stat_aero_crc_ok, 1);
+
+    if (verbose) {
+        fprintf(stderr, "\n[JAERO-DECODED ch%d] %d bytes\n  hex: ", channel_id, len);
+        for (int i = 0; i < len && i < 120; i++)
+            fprintf(stderr, "%02X ", data[i]);
+        if (len > 120) fprintf(stderr, "...");
+        fprintf(stderr, "\n  txt: ");
+        for (int i = 0; i < len && i < 120; i++) {
+            uint8_t c = data[i] & 0x7F;
+            fputc((c >= 0x20 && c < 0x7F) ? c : '.', stderr);
+        }
+        fprintf(stderr, "\n");
+    }
+
+    /* Populate a basic aero_message_t for downstream output */
+    aero_message_t outmsg;
+    memset(&outmsg, 0, sizeof(outmsg));
+    outmsg.channel_id = channel_id;
+    outmsg.lat = NAN;
+    outmsg.lon = NAN;
+    outmsg.alt_ft = -1;
+    outmsg.has_position = 0;
+
+    feed_aero_message(&outmsg);
+    if (web_enabled)
+        web_add_aero(&outmsg);
+}
+
 /* JAERO demod callback — counts bursts for status line. AeroL handles decode. */
 static void jaero_bits_cb(const unsigned char *bits, int num_bits,
                             int channel_id, void *user) {
@@ -425,7 +461,10 @@ static void channel_output_cb(int channel_id, channel_type_t type,
             jc->mixer_inc = 2.0 * M_PI * PMSK_AUDIO_HZ / output_rate;
             jc->pmsk = jaero_pmsk_create(output_rate, (double)baud,
                                           channel_id, jaero_bits_cb, NULL);
-            fprintf(stderr, "[PMSK ch%d] baud=%d rate=%.0f\n",
+            if (jc->pmsk)
+                jaero_pmsk_set_acars_callback(jc->pmsk,
+                                               jaero_acars_data_cb, NULL);
+            fprintf(stderr, "[PMSK ch%d] baud=%d rate=%.0f (continuous P-channel)\n",
                     channel_id, baud, output_rate);
             if (jc->pmsk)
                 chan_init_thread(jc);
