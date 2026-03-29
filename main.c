@@ -160,6 +160,19 @@ static void chan_init_thread(jaero_chan_t *jc)
 #include "vita49.h"
 #include "feed.h"
 #include "web.h"
+
+#ifdef HAVE_LIBACARS
+#include <libacars/libacars.h>
+#include <libacars/acars.h>
+#include <libacars/adsc.h>
+#include <libacars/cpdlc.h>
+#include <libacars/list.h>
+#include <libacars/reassembly.h>
+#include <libacars/vstring.h>
+#include <libacars/version.h>
+static la_reasm_ctx *acars_reasm_ctx = NULL;
+#endif
+
 #include "simd_kernels.h"
 
 #define C_FEK_BLOCKING_QUEUE_IMPLEMENTATION
@@ -380,9 +393,9 @@ static void stdc_bits_cb(const float *soft_bits, int num_bits, void *user) {
         stdc_decoder_feed(stdc_decoder, soft_bits, num_bits);
 }
 
-/* JAERO aerol ACARS callback: receives decoded ACARS userdata from AeroL's
- * full chain — Viterbi, descramble, RS FEC, ISU, ACARS validation.
- * Only fires when acarsitem.valid is true (CRC pass). */
+/* JAERO aerol ACARS callback: receives decoded ISU userdata from AeroL's
+ * full decode chain. acarsitem.valid checked inside jaero_demod.cpp, so
+ * every call here is a CRC-verified ACARS frame. */
 static void jaero_acars_data_cb(const uint8_t *data, int len,
                                   int channel_id, void *user) {
     (void)user;
@@ -402,7 +415,73 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
         fprintf(stderr, "\n");
     }
 
-    /* Populate a basic aero_message_t for downstream output */
+#ifdef HAVE_LIBACARS
+    /* Scan for SOH byte to find ACARS start (AeroL prepends FF FF preamble) */
+    int soh_idx = -1;
+    for (int i = 0; i < len - 12 && i < 6; i++) {
+        if ((data[i] & 0x7F) == 0x01) { soh_idx = i; break; }
+    }
+    if (soh_idx >= 0 && len - soh_idx > 13) {
+        const uint8_t *acars_start = data + soh_idx + 1;
+        int acars_len = len - soh_idx - 1;
+        struct timeval tv;
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        tv.tv_sec = ts.tv_sec;
+        tv.tv_usec = ts.tv_nsec / 1000;
+
+        la_proto_node *tree = la_acars_parse_and_reassemble(
+            acars_start, acars_len, LA_MSG_DIR_AIR2GND, acars_reasm_ctx, tv);
+        if (tree) {
+            la_proto_node *acars_node = la_proto_tree_find_acars(tree);
+            if (acars_node && acars_node->data) {
+                la_acars_msg *amsg = (la_acars_msg *)acars_node->data;
+                if (amsg->reasm_status != LA_REASM_IN_PROGRESS && !amsg->err) {
+                    fprintf(stderr, "\n[ACARS ch%d] reg=%s label=%.2s",
+                            channel_id,
+                            amsg->reg[0] ? amsg->reg : "?",
+                            amsg->label);
+                    if (amsg->txt && amsg->txt[0])
+                        fprintf(stderr, "\n  %s", amsg->txt);
+                    fprintf(stderr, "\n");
+
+                    if (verbose) {
+                        la_vstring *vstr = la_proto_tree_format_text(NULL, tree);
+                        if (vstr && vstr->str)
+                            fprintf(stderr, "%s", vstr->str);
+                        if (vstr) la_vstring_destroy(vstr, true);
+                    }
+
+                    aero_message_t outmsg;
+                    memset(&outmsg, 0, sizeof(outmsg));
+                    outmsg.channel_id = channel_id;
+                    outmsg.lat = NAN;
+                    outmsg.lon = NAN;
+                    outmsg.alt_ft = -1;
+                    outmsg.has_position = 0;
+                    outmsg.mode = amsg->mode;
+                    outmsg.block_id = amsg->block_id;
+                    outmsg.ack = amsg->ack;
+                    strncpy(outmsg.reg, amsg->reg, sizeof(outmsg.reg) - 1);
+                    strncpy(outmsg.flight, amsg->flight_id, sizeof(outmsg.flight) - 1);
+                    strncpy(outmsg.label, amsg->label, sizeof(outmsg.label) - 1);
+                    if (amsg->txt) {
+                        int tl = (int)strlen(amsg->txt);
+                        if (tl > (int)sizeof(outmsg.text) - 1)
+                            tl = sizeof(outmsg.text) - 1;
+                        memcpy(outmsg.text, amsg->txt, tl);
+                        outmsg.text_len = tl;
+                    }
+
+                    feed_aero_message(&outmsg);
+                    if (web_enabled)
+                        web_add_aero(&outmsg);
+                }
+            }
+            la_proto_tree_destroy(tree);
+        }
+    }
+#else
     aero_message_t outmsg;
     memset(&outmsg, 0, sizeof(outmsg));
     outmsg.channel_id = channel_id;
@@ -410,10 +489,10 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
     outmsg.lon = NAN;
     outmsg.alt_ft = -1;
     outmsg.has_position = 0;
-
     feed_aero_message(&outmsg);
     if (web_enabled)
         web_add_aero(&outmsg);
+#endif
 }
 
 /* JAERO demod callback — counts bursts for status line. AeroL handles decode. */
@@ -630,8 +709,15 @@ int main(int argc, char **argv) {
                     have_aero = 1; break;
                 }
             }
-            if (have_aero)
+            if (have_aero) {
                 fprintf(stderr, "Aero decoder: JAERO/AeroL embedded\n");
+#ifdef HAVE_LIBACARS
+                acars_reasm_ctx = la_reasm_ctx_new();
+                if (acars_reasm_ctx)
+                    fprintf(stderr, "libacars %s: ACARS reassembly active\n",
+                            LA_VERSION);
+#endif
+            }
         }
     }
 
