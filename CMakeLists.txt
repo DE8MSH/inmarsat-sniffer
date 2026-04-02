@@ -55,6 +55,9 @@ set(SOURCES
     ${PROJECT_SOURCE_DIR}/feed.c
     ${PROJECT_SOURCE_DIR}/web.c
     ${PROJECT_SOURCE_DIR}/vita49.c
+    ${PROJECT_SOURCE_DIR}/acars_position.c
+    ${PROJECT_SOURCE_DIR}/waypoint_db.c
+    ${PROJECT_SOURCE_DIR}/learned_waypoints.c
 )
 
 # JAERO DSP library (C++ with C API, stripped of Qt)

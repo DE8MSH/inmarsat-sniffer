@@ -160,6 +160,9 @@ static void chan_init_thread(jaero_chan_t *jc)
 #include "vita49.h"
 #include "feed.h"
 #include "web.h"
+#include "acars_position.h"
+#include "waypoint_db.h"
+#include "learned_waypoints.h"
 
 #ifdef HAVE_LIBACARS
 #include <libacars/libacars.h>
@@ -473,6 +476,37 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                         outmsg.text_len = tl;
                     }
 
+                    /* Position extraction from ACARS text */
+                    double lat = 0, lon = 0;
+                    int alt_ft = -99999;
+                    int have_pos = 0;
+                    if (!have_pos) {
+                        have_pos = acars_extract_text_position(amsg->label,
+                                                                amsg->txt,
+                                                                &lat, &lon);
+                        if (have_pos) atomic_fetch_add(&stat_pos_text, 1);
+                    }
+                    if (!have_pos) {
+                        have_pos = acars_extract_waypoint_position(amsg->label,
+                                                                    amsg->txt,
+                                                                    &lat, &lon);
+                        if (have_pos) atomic_fetch_add(&stat_pos_waypoint, 1);
+                    }
+                    if (have_pos) {
+                        outmsg.lat = lat;
+                        outmsg.lon = lon;
+                        outmsg.alt_ft = alt_ft == -99999 ? -1 : alt_ft;
+                        outmsg.has_position = 1;
+                        fprintf(stderr, "  pos=%.4f,%.4f\n", lat, lon);
+                    }
+
+                    /* Harvest waypoints from FPN messages */
+                    if (amsg->txt && amsg->label[0] == 'H' &&
+                        amsg->label[1] == '1' &&
+                        strncmp(amsg->txt, "FPN", 3) == 0) {
+                        learned_wp_parse_fpn(amsg->txt);
+                    }
+
                     feed_aero_message(&outmsg);
                     if (web_enabled)
                         web_add_aero(&outmsg);
@@ -628,6 +662,25 @@ int main(int argc, char **argv) {
 
     blocking_queue_init(&samples_queue, SAMPLES_QUEUE_SIZE);
     blocking_queue_init(&decoded_queue, DECODED_QUEUE_SIZE);
+
+    /* Load waypoint DB for text-based position extraction */
+    {
+        char wp_path[512];
+        ssize_t exe_len = readlink("/proc/self/exe", wp_path, sizeof(wp_path) - 1);
+        if (exe_len > 0) {
+            wp_path[exe_len] = '\0';
+            char *slash = strrchr(wp_path, '/');
+            if (slash) {
+                snprintf(slash + 1, sizeof(wp_path) - (slash + 1 - wp_path),
+                         "../data/waypoints.csv");
+                if (waypoint_db_load(wp_path) < 0) {
+                    snprintf(slash + 1, sizeof(wp_path) - (slash + 1 - wp_path),
+                             "data/waypoints.csv");
+                    waypoint_db_load(wp_path);
+                }
+            }
+        }
+    }
 
 #ifdef HAVE_ZMQ
     if (zmq_enabled) {
