@@ -163,6 +163,8 @@ static void chan_init_thread(jaero_chan_t *jc)
 #include "acars_position.h"
 #include "waypoint_db.h"
 #include "learned_waypoints.h"
+#include "basestation.h"
+#include "aircraft_db.h"
 
 #ifdef HAVE_LIBACARS
 #include <libacars/libacars.h>
@@ -498,6 +500,16 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                         outmsg.alt_ft = alt_ft == -99999 ? -1 : alt_ft;
                         outmsg.has_position = 1;
                         fprintf(stderr, "  pos=%.4f,%.4f\n", lat, lon);
+                        if (basestation_enabled) {
+                            struct timespec tsn;
+                            clock_gettime(CLOCK_REALTIME, &tsn);
+                            uint64_t ns = (uint64_t)tsn.tv_sec * 1000000000ULL
+                                        + (uint64_t)tsn.tv_nsec;
+                            basestation_send_position(amsg->reg,
+                                                       amsg->flight_id,
+                                                       lat, lon, alt_ft,
+                                                       -1.0, -1.0, ns);
+                        }
                     }
 
                     /* Harvest waypoints from FPN messages */
@@ -624,9 +636,27 @@ int main(int argc, char **argv) {
     simd_init(0);
     feed_init();
 
+    /* Update aircraft DB if requested, then exit */
+    if (update_db_flag) {
+        int rc = aircraft_db_update();
+        return rc < 0 ? 1 : 0;
+    }
+
     if (web_enabled) {
         if (web_init(web_port) != 0)
             errx(1, "Failed to start web dashboard");
+    }
+
+    /* Basestation (SBS) output for aircraft positions */
+    if (basestation_enabled) {
+        const char *dbpath = aircraft_db_path ? aircraft_db_path
+                                               : aircraft_db_default_path();
+        if (!dbpath || aircraft_db_load(dbpath) < 0) {
+            fprintf(stderr, "basestation: no aircraft database found\n"
+                    "  Run: inmarsat-sniffer --update-db\n");
+        }
+        if (basestation_init(basestation_endpoint) != 0)
+            errx(1, "Failed to start basestation output");
     }
 
     const satellite_t *sat = NULL;
@@ -819,6 +849,10 @@ int main(int argc, char **argv) {
     }
     stdc_decoder_destroy(stdc_decoder);
     channelizer_destroy(channelizer);
+
+    if (basestation_enabled)
+        basestation_destroy();
+    aircraft_db_destroy();
 
 #ifdef HAVE_ZMQ
     if (zmq_enabled) {

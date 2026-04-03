@@ -58,6 +58,8 @@ set(SOURCES
     ${PROJECT_SOURCE_DIR}/acars_position.c
     ${PROJECT_SOURCE_DIR}/waypoint_db.c
     ${PROJECT_SOURCE_DIR}/learned_waypoints.c
+    ${PROJECT_SOURCE_DIR}/basestation.c
+    ${PROJECT_SOURCE_DIR}/aircraft_db.c
 )
 
 # JAERO DSP library (C++ with C API, stripped of Qt)
