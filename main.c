@@ -174,8 +174,43 @@ static void chan_init_thread(jaero_chan_t *jc)
 #include <libacars/list.h>
 #include <libacars/reassembly.h>
 #include <libacars/vstring.h>
+#include <libacars/json.h>
 #include <libacars/version.h>
 static la_reasm_ctx *acars_reasm_ctx = NULL;
+
+/* Extract lat/lon from ADS-C binary payload (ARINC 620 tag list) */
+static int extract_adsc_position(la_adsc_msg_t *adsc,
+                                   double *lat, double *lon, int *alt_ft,
+                                   double *gs_kts, double *track_deg) {
+    if (!adsc || adsc->err) return 0;
+    int found_pos = 0;
+    *gs_kts = -1;
+    *track_deg = -1;
+    for (la_list *p = adsc->tag_list; p; p = p->next) {
+        la_adsc_tag_t *t = (la_adsc_tag_t *)p->data;
+        if (!t || !t->data) continue;
+        if (!found_pos && (t->tag == 7 || t->tag == 9 || t->tag == 10 ||
+                           t->tag == 18 || t->tag == 19 || t->tag == 20)) {
+            la_adsc_basic_report_t *r = (la_adsc_basic_report_t *)t->data;
+            if (r->lat >= -90 && r->lat <= 90 &&
+                r->lon >= -180 && r->lon <= 180 &&
+                !(r->lat == 0 && r->lon == 0)) {
+                *lat = r->lat;
+                *lon = r->lon;
+                *alt_ft = r->alt;
+                found_pos = 1;
+            }
+        }
+        if (t->tag == 14 || t->tag == 15) {
+            la_adsc_earth_air_ref_t *r = (la_adsc_earth_air_ref_t *)t->data;
+            if (!r->heading_invalid) {
+                *track_deg = r->heading;
+                *gs_kts = r->speed;
+            }
+        }
+    }
+    return found_pos;
+}
 #endif
 
 #include "simd_kernels.h"
@@ -478,10 +513,19 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                         outmsg.text_len = tl;
                     }
 
-                    /* Position extraction from ACARS text */
+                    /* Position extraction: ADS-C first, then text regex, then waypoints */
                     double lat = 0, lon = 0;
+                    double gs_kts = -1, track_deg = -1;
                     int alt_ft = -99999;
                     int have_pos = 0;
+                    la_proto_node *adsc_node = la_proto_tree_find_adsc(tree);
+                    if (adsc_node && adsc_node->data) {
+                        la_adsc_msg_t *adsc = (la_adsc_msg_t *)adsc_node->data;
+                        have_pos = extract_adsc_position(adsc, &lat, &lon,
+                                                         &alt_ft,
+                                                         &gs_kts, &track_deg);
+                        if (have_pos) atomic_fetch_add(&stat_pos_adsc, 1);
+                    }
                     if (!have_pos) {
                         have_pos = acars_extract_text_position(amsg->label,
                                                                 amsg->txt,
@@ -499,7 +543,10 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                         outmsg.lon = lon;
                         outmsg.alt_ft = alt_ft == -99999 ? -1 : alt_ft;
                         outmsg.has_position = 1;
-                        fprintf(stderr, "  pos=%.4f,%.4f\n", lat, lon);
+                        fprintf(stderr, "  pos=%.4f,%.4f%s%d\n",
+                                lat, lon,
+                                alt_ft == -99999 ? "" : " alt=",
+                                alt_ft == -99999 ? 0 : alt_ft);
                         if (basestation_enabled) {
                             struct timespec tsn;
                             clock_gettime(CLOCK_REALTIME, &tsn);
@@ -508,8 +555,19 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                             basestation_send_position(amsg->reg,
                                                        amsg->flight_id,
                                                        lat, lon, alt_ft,
-                                                       -1.0, -1.0, ns);
+                                                       gs_kts, track_deg, ns);
                         }
+                    }
+
+                    /* CPDLC: surface controller-pilot text messages */
+                    la_proto_node *cpdlc_node = la_proto_tree_find_cpdlc(tree);
+                    if (cpdlc_node) {
+                        la_vstring *vstr = la_proto_tree_format_text(NULL, cpdlc_node);
+                        if (vstr && vstr->str) {
+                            fprintf(stderr, "[CPDLC ch%d %s]\n%s",
+                                    channel_id, amsg->reg, vstr->str);
+                        }
+                        if (vstr) la_vstring_destroy(vstr, true);
                     }
 
                     /* Harvest waypoints from FPN messages */
@@ -618,6 +676,9 @@ static void channel_output_cb(int channel_id, channel_type_t type,
             jc->mixer_inc = 2.0 * M_PI * AUDIO_CENTER_HZ / output_rate;
             jc->oqpsk = jaero_oqpsk_create(output_rate, (double)baud,
                                              channel_id, jaero_bits_cb, NULL);
+            if (jc->oqpsk)
+                jaero_oqpsk_set_acars_callback(jc->oqpsk,
+                                                jaero_acars_data_cb, NULL);
             fprintf(stderr, "[OQPSK-INIT] ch%d baud=%d rate=%.0f\n",
                     channel_id, baud, output_rate);
             if (jc->oqpsk)
@@ -824,6 +885,10 @@ int main(int argc, char **argv) {
     }
 
     fprintf(stderr, "\nShutting down...\n");
+    fprintf(stderr, "Positions: %lu ADS-C, %lu text, %lu waypoint\n",
+            atomic_load(&stat_pos_adsc),
+            atomic_load(&stat_pos_text),
+            atomic_load(&stat_pos_waypoint));
 
 #ifdef HAVE_RTLSDR
     if (rtl_dev)
