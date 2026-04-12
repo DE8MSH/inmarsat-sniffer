@@ -129,6 +129,23 @@ else()
     message(STATUS "libacars: not found (ACARS sublayer decoding disabled)")
 endif()
 
+# Optional MQTT for publishing ACARS messages
+find_library(MOSQUITTO_LIB mosquitto)
+find_path(MOSQUITTO_INC mosquitto.h)
+if(MOSQUITTO_LIB AND MOSQUITTO_INC)
+    set(MOSQUITTO_FOUND TRUE)
+    list(APPEND SOURCES ${PROJECT_SOURCE_DIR}/mqtt.c)
+    include_directories(${MOSQUITTO_INC})
+endif()
+
+if(MOSQUITTO_FOUND)
+    target_link_libraries(inmarsat-sniffer PRIVATE ${MOSQUITTO_LIB})
+    target_compile_definitions(inmarsat-sniffer PRIVATE HAVE_MQTT)
+    message(STATUS "MQTT: enabled")
+else()
+    message(STATUS "MQTT: not found (install libmosquitto-dev)")
+endif()
+
 if(SOAPYSDR_FOUND)
     target_link_libraries(inmarsat-sniffer PRIVATE ${SOAPYSDR_LIBRARIES})
     target_compile_definitions(inmarsat-sniffer PRIVATE HAVE_SOAPYSDR)

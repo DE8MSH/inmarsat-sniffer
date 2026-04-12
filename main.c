@@ -166,6 +166,10 @@ static void chan_init_thread(jaero_chan_t *jc)
 #include "basestation.h"
 #include "aircraft_db.h"
 
+#ifdef HAVE_MQTT
+#include "mqtt.h"
+#endif
+
 #ifdef HAVE_LIBACARS
 #include <libacars/libacars.h>
 #include <libacars/acars.h>
@@ -703,6 +707,16 @@ int main(int argc, char **argv) {
         return rc < 0 ? 1 : 0;
     }
 
+#ifdef HAVE_MQTT
+    if (mqtt_enabled) {
+        extern int mqtt_init(const char *, int, const char *, const char *,
+                              const char *);
+        if (mqtt_init(mqtt_host, mqtt_port, mqtt_user, mqtt_pass,
+                       mqtt_topic) != 0)
+            errx(1, "Failed to initialize MQTT");
+    }
+#endif
+
     if (web_enabled) {
         if (web_init(web_port) != 0)
             errx(1, "Failed to start web dashboard");
@@ -918,6 +932,13 @@ int main(int argc, char **argv) {
     if (basestation_enabled)
         basestation_destroy();
     aircraft_db_destroy();
+
+#ifdef HAVE_MQTT
+    if (mqtt_enabled) {
+        extern void mqtt_cleanup(void);
+        mqtt_cleanup();
+    }
+#endif
 
 #ifdef HAVE_ZMQ
     if (zmq_enabled) {
