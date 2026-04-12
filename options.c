@@ -65,6 +65,10 @@ extern int rtl_dev_index;
 extern int vita49_enabled;
 extern char *vita49_endpoint;
 extern int web_enabled;
+#ifdef HAVE_ZMQ
+extern int zmq_enabled;
+extern int zmq_base_port;
+#endif
 extern int web_port;
 extern int feed_enabled;
 #define UDP_MAX 4
@@ -76,6 +80,14 @@ extern char *basestation_endpoint;
 extern char *aircraft_db_path;
 extern int update_db_flag;
 extern char *station_id;
+extern char *hackrf_serial;
+extern int hackrf_lna_gain;
+extern int hackrf_vga_gain;
+extern int hackrf_amp_enable;
+extern int bladerf_num;
+extern int bladerf_gain_val;
+extern char *usrp_serial;
+extern int usrp_gain_val;
 extern int mqtt_enabled;
 extern char *mqtt_host;
 extern int mqtt_port;
@@ -96,21 +108,38 @@ static void usage(int exitcode) {
 "    --format=FMT            IQ format: ci8 (default), cu8 (rtl_sdr), ci16, cf32\n"
 "\n"
 "SDR options:\n"
-"    -i, --interface=IFACE   SDR to use (see --list for available devices)\n"
+"    -i, --interface=IFACE   SDR to use (see --list for available devices):\n"
+"                             rtl-N, soapy-N, soapy:driver=X, sdrplay[-SERIAL],\n"
+"                             hackrf[-SERIAL], bladerfN, usrp-PRODUCT-SERIAL\n"
 "    -r, --sample-rate=HZ    sample rate in Hz (default: auto from satellite)\n"
 "    -B, --bias-tee          enable bias tee power\n"
 "    --soapy-gain=GAIN       SoapySDR overall gain in dB (default: 40)\n"
 "    --soapy-gain-element=NAME:VAL  per-element gain (repeatable)\n"
 "    --soapy-setting=K:V     SoapySDR device setting (repeatable)\n"
+"    --hackrf-lna=DB         HackRF LNA gain 0-40 in 8dB steps (default: 40)\n"
+"    --hackrf-vga=DB         HackRF VGA gain 0-62 in 2dB steps (default: 20)\n"
+"    --hackrf-amp            enable HackRF 14dB RF amplifier\n"
+"    --bladerf-gain=DB       BladeRF RX gain in dB (default: 40)\n"
+"    --usrp-gain=DB          USRP RX gain in dB (default: 40)\n"
 "\n"
 "Satellite:\n"
 "    --satellite=SAT         satellite designator: 4F3, 3F5, AF1, F1\n"
+"                             (required for live, determines frequencies)\n"
 "    --mode=MODE             operating mode: auto (default), aero, stdc, full\n"
 "\n"
 "Output:\n"
 "    --web[=PORT]            enable live web dashboard (default port: 8888)\n"
 "    --feed                  output JSON lines to stdout\n"
 "    --udp=HOST:PORT         send JSON messages via UDP (repeatable, max 4)\n"
+"    --basestation[=ENDPOINT] SBS (MSG,3) aircraft feed — PORT for server\n"
+"                             (default 30003), HOST:PORT to push to remote\n"
+"    --mqtt=HOST[:PORT]      publish ACARS JSON to MQTT broker (default port 1883)\n"
+"    --mqtt-user=USER        MQTT authentication username\n"
+"    --mqtt-pass=PASS        MQTT authentication password\n"
+"    --mqtt-topic=TOPIC      MQTT topic (default: inmarsat-sniffer/acars)\n"
+"    --station-id=ID         station identifier for JSON feed output\n"
+"    --aircraft-db=PATH      tar1090-db aircraft.csv (for reg→ICAO hex)\n"
+"    --update-db             download/refresh aircraft DB and exit\n"
 "    -v, --verbose           verbose output to stderr\n"
 "    -h, --help              show this help\n"
 "    --list                  list available SDR interfaces\n"
@@ -118,6 +147,7 @@ static void usage(int exitcode) {
 "\n"
 "Examples:\n"
 "    inmarsat-sniffer -i soapy-0 --satellite=4F3\n"
+"    inmarsat-sniffer -i soapy-0 --satellite=4F3 --web --feed\n"
 "    inmarsat-sniffer -f recording.cf32 --format=cf32 --satellite=4F3\n"
 "    inmarsat-sniffer --vita49 --format=cf32 -r 2400000 --satellite=4F3\n"
     );
@@ -128,6 +158,24 @@ static void list_interfaces(void) {
     printf("Available SDR interfaces (-i VALUE):\n");
 #ifdef HAVE_RTLSDR
     rtlsdr_backend_list();
+#endif
+#ifdef HAVE_HACKRF
+    {
+        extern void hackrf_backend_list(void);
+        hackrf_backend_list();
+    }
+#endif
+#ifdef HAVE_BLADERF
+    {
+        extern void bladerf_backend_list(void);
+        bladerf_backend_list();
+    }
+#endif
+#ifdef HAVE_UHD
+    {
+        extern void usrp_backend_list(void);
+        usrp_backend_list();
+    }
 #endif
 #ifdef HAVE_SDRPLAY
     sdrplay_list();
@@ -158,6 +206,20 @@ void parse_options(int argc, char **argv) {
         OPT_SOAPY_SETTING,
         OPT_SDRPLAY_GAIN,
         OPT_VITA49,
+        OPT_ZMQ,
+        OPT_BASESTATION,
+        OPT_AIRCRAFT_DB,
+        OPT_UPDATE_DB,
+        OPT_STATION_ID,
+        OPT_HACKRF_LNA,
+        OPT_HACKRF_VGA,
+        OPT_HACKRF_AMP,
+        OPT_BLADERF_GAIN,
+        OPT_USRP_GAIN,
+        OPT_MQTT,
+        OPT_MQTT_USER,
+        OPT_MQTT_PASS,
+        OPT_MQTT_TOPIC,
     };
 
     static const struct option longopts[] = {
@@ -176,12 +238,26 @@ void parse_options(int argc, char **argv) {
         { "mode",               required_argument, NULL, OPT_MODE },
         { "web",                optional_argument, NULL, OPT_WEB },
         { "feed",               no_argument,       NULL, OPT_FEED },
+        { "zmq",                optional_argument, NULL, OPT_ZMQ },
         { "udp",                required_argument, NULL, OPT_UDP },
         { "soapy-gain",         required_argument, NULL, OPT_SOAPY_GAIN },
         { "soapy-gain-element", required_argument, NULL, OPT_SOAPY_GAIN_ELEM },
         { "soapy-setting",      required_argument, NULL, OPT_SOAPY_SETTING },
         { "sdrplay-gain",       required_argument, NULL, OPT_SDRPLAY_GAIN },
         { "vita49",             optional_argument, NULL, OPT_VITA49 },
+        { "basestation",        optional_argument, NULL, OPT_BASESTATION },
+        { "aircraft-db",        required_argument, NULL, OPT_AIRCRAFT_DB },
+        { "update-db",          no_argument,       NULL, OPT_UPDATE_DB },
+        { "station-id",         required_argument, NULL, OPT_STATION_ID },
+        { "hackrf-lna",         required_argument, NULL, OPT_HACKRF_LNA },
+        { "hackrf-vga",         required_argument, NULL, OPT_HACKRF_VGA },
+        { "hackrf-amp",         no_argument,       NULL, OPT_HACKRF_AMP },
+        { "bladerf-gain",       required_argument, NULL, OPT_BLADERF_GAIN },
+        { "usrp-gain",          required_argument, NULL, OPT_USRP_GAIN },
+        { "mqtt",               required_argument, NULL, OPT_MQTT },
+        { "mqtt-user",          required_argument, NULL, OPT_MQTT_USER },
+        { "mqtt-pass",          required_argument, NULL, OPT_MQTT_PASS },
+        { "mqtt-topic",         required_argument, NULL, OPT_MQTT_TOPIC },
         { "ppm",                required_argument, NULL, 'p' },
         { NULL, 0, NULL, 0 },
     };
@@ -191,14 +267,38 @@ void parse_options(int argc, char **argv) {
         case 'f':
             in_filename = optarg;
             break;
+
         case 'l':
             live = 1;
             break;
+
         case 'i':
             live = 1;
 #ifdef HAVE_RTLSDR
             if (strncmp(optarg, "rtl-", 4) == 0) {
                 rtl_dev_index = atoi(optarg + 4);
+                break;
+            }
+#endif
+#ifdef HAVE_HACKRF
+            if (strncmp(optarg, "hackrf-", 7) == 0) {
+                hackrf_serial = strdup(optarg + 7);
+                break;
+            } else if (strcmp(optarg, "hackrf") == 0) {
+                hackrf_serial = strdup("");
+                break;
+            }
+#endif
+#ifdef HAVE_BLADERF
+            if (strncmp(optarg, "bladerf", 7) == 0) {
+                bladerf_num = atoi(optarg + 7);
+                break;
+            }
+#endif
+#ifdef HAVE_UHD
+            if (strncmp(optarg, "usrp-", 5) == 0) {
+                extern char *usrp_get_serial(const char *);
+                usrp_serial = strdup(usrp_get_serial(optarg));
                 break;
             }
 #endif
@@ -217,24 +317,33 @@ void parse_options(int argc, char **argv) {
             } else if (strncmp(optarg, "soapy-", 6) == 0) {
                 soapy_num = atoi(optarg + 6);
             } else {
-                errx(1, "Unknown interface: %s", optarg);
+                errx(1, "Unknown interface: %s (use rtl-N, hackrf[-SERIAL], bladerfN, usrp-PRODUCT-SERIAL, soapy-N, soapy:args, or sdrplay[-SERIAL])", optarg);
             }
 #else
+#ifndef HAVE_SDRPLAY
+#ifndef HAVE_RTLSDR
             errx(1, "No SDR backend compiled in");
 #endif
+#endif
+#endif
             break;
+
         case 'r':
             samp_rate = atof(optarg);
             break;
+
         case 'c':
             center_freq = strtod(optarg, NULL);
             break;
+
         case 'p':
             ppm_correction = atoi(optarg);
             break;
+
         case 'B':
             bias_tee = 1;
             break;
+
         case OPT_FORMAT:
             format_explicit = 1;
             if (strcasecmp(optarg, "ci8") == 0 || strcasecmp(optarg, "cs8") == 0)
@@ -248,22 +357,28 @@ void parse_options(int argc, char **argv) {
             else
                 errx(1, "Unknown format: %s (use ci8, cu8, ci16, cf32)", optarg);
             break;
+
         case 'v':
             verbose = 1;
             break;
+
         case 'h':
             usage(0);
             break;
+
         case OPT_LIST:
             list_interfaces();
             break;
+
         case OPT_LIST_SATS:
             satellite_list();
             exit(0);
             break;
+
         case OPT_SATELLITE:
             satellite_name = strdup(optarg);
             break;
+
         case OPT_MODE:
             if (strcasecmp(optarg, "auto") == 0)
                 op_mode = MODE_AUTO;
@@ -274,16 +389,96 @@ void parse_options(int argc, char **argv) {
             else if (strcasecmp(optarg, "full") == 0)
                 op_mode = MODE_FULL;
             else
-                errx(1, "Unknown mode: %s", optarg);
+                errx(1, "Unknown mode: %s (use auto, aero, stdc, full)", optarg);
             break;
+
         case OPT_WEB:
             web_enabled = 1;
             if (optarg)
                 web_port = atoi(optarg);
             break;
+
+        case OPT_ZMQ:
+#ifdef HAVE_ZMQ
+            zmq_enabled = 1;
+            if (optarg)
+                zmq_base_port = atoi(optarg);
+#else
+            errx(1, "ZMQ support not compiled in (install libzmq-dev)");
+#endif
+            break;
+
         case OPT_FEED:
             feed_enabled = 1;
             break;
+
+        case OPT_BASESTATION:
+            basestation_enabled = 1;
+            if (optarg)
+                basestation_endpoint = strdup(optarg);
+            break;
+
+        case OPT_AIRCRAFT_DB:
+            aircraft_db_path = strdup(optarg);
+            break;
+
+        case OPT_UPDATE_DB:
+            update_db_flag = 1;
+            break;
+
+        case OPT_STATION_ID:
+            station_id = strdup(optarg);
+            break;
+
+        case OPT_HACKRF_LNA:
+            hackrf_lna_gain = atoi(optarg);
+            break;
+
+        case OPT_HACKRF_VGA:
+            hackrf_vga_gain = atoi(optarg);
+            break;
+
+        case OPT_HACKRF_AMP:
+            hackrf_amp_enable = 1;
+            break;
+
+        case OPT_BLADERF_GAIN:
+            bladerf_gain_val = atoi(optarg);
+            break;
+
+        case OPT_USRP_GAIN:
+            usrp_gain_val = atoi(optarg);
+            break;
+
+        case OPT_MQTT: {
+#ifdef HAVE_MQTT
+            mqtt_enabled = 1;
+            char *ep = strdup(optarg);
+            char *colon = strrchr(ep, ':');
+            if (colon) {
+                *colon = '\0';
+                mqtt_host = strdup(ep);
+                mqtt_port = atoi(colon + 1);
+            } else {
+                mqtt_host = strdup(ep);
+                mqtt_port = 1883;
+            }
+            free(ep);
+#else
+            errx(1, "MQTT support not compiled in (install libmosquitto-dev)");
+#endif
+            break;
+        }
+        case OPT_MQTT_USER:
+            mqtt_user = strdup(optarg);
+            break;
+        case OPT_MQTT_PASS:
+            mqtt_pass = strdup(optarg);
+            break;
+        case OPT_MQTT_TOPIC:
+            mqtt_topic = strdup(optarg);
+            break;
+
         case OPT_UDP: {
             if (udp_count >= UDP_MAX)
                 errx(1, "Too many --udp endpoints (max %d)", UDP_MAX);
@@ -293,17 +488,22 @@ void parse_options(int argc, char **argv) {
             *colon = '\0';
             udp_hosts[udp_count] = strdup(optarg);
             udp_ports[udp_count] = atoi(colon + 1);
+            if (udp_ports[udp_count] < 1 || udp_ports[udp_count] > 65535)
+                errx(1, "Invalid port: %s", colon + 1);
             udp_count++;
             break;
         }
+
         case OPT_SOAPY_GAIN:
             soapy_gain_val = atof(optarg);
             break;
+
 #ifdef HAVE_SDRPLAY
         case OPT_SDRPLAY_GAIN:
             sdrplay_gain_val = atoi(optarg);
             break;
 #endif
+
 #ifdef HAVE_SOAPYSDR
         case OPT_SOAPY_GAIN_ELEM: {
             if (soapy_gain_elem_count >= SOAPY_GAINS_MAX)
@@ -317,6 +517,7 @@ void parse_options(int argc, char **argv) {
             soapy_gain_elem_count++;
             break;
         }
+
         case OPT_SOAPY_SETTING: {
             if (soapy_setting_count >= SOAPY_SETTINGS_MAX)
                 errx(1, "Too many --soapy-setting (max %d)", SOAPY_SETTINGS_MAX);
@@ -330,17 +531,22 @@ void parse_options(int argc, char **argv) {
             break;
         }
 #endif
+
         case OPT_VITA49:
             vita49_enabled = 1;
             if (optarg)
                 vita49_endpoint = strdup(optarg);
             break;
+
         default:
             usage(1);
             break;
         }
     }
 
+    /* Validate inputs — but --update-db is a standalone action. */
+    if (update_db_flag)
+        return;
     if (!in_filename && !live && !vita49_enabled)
         errx(1, "No input specified. Use -f FILE, -i IFACE, or --vita49");
 
@@ -353,6 +559,7 @@ void parse_options(int argc, char **argv) {
     if (live && !satellite_name)
         errx(1, "--satellite is required for live capture");
 
+    /* Open input file */
     if (in_filename) {
         if (strcmp(in_filename, "-") == 0) {
             in_file = stdin;
@@ -360,6 +567,8 @@ void parse_options(int argc, char **argv) {
             in_file = fopen(in_filename, "rb");
             if (!in_file)
                 err(1, "Cannot open %s", in_filename);
+
+            /* Auto-detect format from extension */
             if (!format_explicit) {
                 const char *ext = strrchr(in_filename, '.');
                 if (ext) {

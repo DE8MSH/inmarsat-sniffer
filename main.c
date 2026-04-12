@@ -899,6 +899,10 @@ int main(int argc, char **argv) {
     }
 
     fprintf(stderr, "\nShutting down...\n");
+    fprintf(stderr, "Stats: %lu STD-C frames, %lu Aero msgs, %lu drops\n",
+            atomic_load(&stat_stdc_frames),
+            atomic_load(&stat_aero_msgs),
+            atomic_load(&stat_drops));
     fprintf(stderr, "Positions: %lu ADS-C, %lu text, %lu waypoint\n",
             atomic_load(&stat_pos_adsc),
             atomic_load(&stat_pos_text),
