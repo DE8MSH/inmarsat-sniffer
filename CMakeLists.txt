@@ -60,7 +60,26 @@ set(SOURCES
     ${PROJECT_SOURCE_DIR}/learned_waypoints.c
     ${PROJECT_SOURCE_DIR}/basestation.c
     ${PROJECT_SOURCE_DIR}/aircraft_db.c
+    ${PROJECT_SOURCE_DIR}/simd_generic.c
 )
+
+# SIMD kernels — platform-specific, runtime-detected (ported from iridium-sniffer)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64|amd64|x86|i[3-6]86")
+    set_source_files_properties(${PROJECT_SOURCE_DIR}/simd_sse42.c
+        PROPERTIES COMPILE_FLAGS "-msse4.2")
+    set_source_files_properties(${PROJECT_SOURCE_DIR}/simd_avx2.c
+        PROPERTIES COMPILE_FLAGS "-mavx2 -mfma")
+    list(APPEND SOURCES
+        ${PROJECT_SOURCE_DIR}/simd_sse42.c
+        ${PROJECT_SOURCE_DIR}/simd_avx2.c)
+    message(STATUS "SIMD: SSE4.2 + AVX2+FMA kernels enabled (runtime-detected)")
+elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "arm|ARM|aarch64|AARCH64")
+    list(APPEND SOURCES
+        ${PROJECT_SOURCE_DIR}/simd_neon.c)
+    message(STATUS "SIMD: NEON kernels enabled (AArch64)")
+else()
+    message(STATUS "SIMD: scalar only (unrecognised platform)")
+endif()
 
 # JAERO DSP library (C++ with C API, stripped of Qt)
 set(JAERO_DSP_SOURCES
