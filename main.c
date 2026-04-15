@@ -149,6 +149,18 @@ static void chan_init_thread(jaero_chan_t *jc)
 #include "rtlsdr.h"
 #endif
 
+#ifdef HAVE_HACKRF
+#include "hackrf.h"
+#endif
+
+#ifdef HAVE_BLADERF
+#include "bladerf.h"
+#endif
+
+#ifdef HAVE_UHD
+#include "usrp.h"
+#endif
+
 #include "sdr.h"
 #include "inmarsat.h"
 #include "satellites.h"
@@ -803,6 +815,24 @@ int main(int argc, char **argv) {
         if (rtl_dev_index >= 0) {
             rtl_dev = rtlsdr_backend_setup(rtl_dev_index);
             pthread_create(&input_tid, NULL, rtlsdr_stream_thread, rtl_dev);
+        } else
+#endif
+#ifdef HAVE_HACKRF
+        if (hackrf_serial) {
+            void *dev = hackrf_backend_setup(hackrf_serial);
+            pthread_create(&input_tid, NULL, hackrf_stream_thread, dev);
+        } else
+#endif
+#ifdef HAVE_BLADERF
+        if (bladerf_num >= 0) {
+            void *dev = bladerf_backend_setup(bladerf_num);
+            pthread_create(&input_tid, NULL, bladerf_stream_thread, dev);
+        } else
+#endif
+#ifdef HAVE_UHD
+        if (usrp_serial) {
+            void *dev = usrp_backend_setup(usrp_serial);
+            pthread_create(&input_tid, NULL, usrp_stream_thread, dev);
         } else
 #endif
 #ifdef HAVE_SDRPLAY
