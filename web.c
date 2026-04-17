@@ -267,11 +267,9 @@ static int build_json(char *buf, int maxlen) {
 
 static const char HTML_PAGE[] =
 "<!DOCTYPE html>\n"
-"<!DOCTYPE html>\n"
-"<html lang=\"en\"><head>\n"
+"<html><head>\n"
 "<meta charset=\"utf-8\">\n"
 "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n"
-"<meta name=\"description\" content=\"Inmarsat L-band live decoder\">\n"
 "<title>inmarsat-sniffer</title>\n"
 "<link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\">\n"
 "<script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"></script>\n"
