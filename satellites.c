@@ -131,12 +131,32 @@ static const channel_def_t channels_af1[] = {
 };
 
 /* I4-F1 (143.5E, POR) -- Pacific Ocean
- * TODO: no SDRReceiver config available, needs verification */
+ * Frequencies from RadioReference forums + sigidwiki Inmarsat Aero listings. */
 static const channel_def_t channels_f1[] = {
     { 1541450000.0, CHAN_STDC_EGC,   0 },
-    { 1545100000.0, CHAN_AERO_600,  1 },
-    { 1546050000.0, CHAN_AERO_10500, 2 },
-    { 1546150000.0, CHAN_AERO_8400, 3 },
+
+    /* Aero 600 baud channels */
+    { 1545025000.0, CHAN_AERO_600,  1 },
+    { 1545030000.0, CHAN_AERO_600,  2 },
+    { 1545035000.0, CHAN_AERO_600,  3 },
+    { 1545040000.0, CHAN_AERO_600,  4 },
+    { 1545045000.0, CHAN_AERO_600,  5 },
+    { 1545055000.0, CHAN_AERO_600,  6 },
+    { 1545095000.0, CHAN_AERO_600,  7 },
+    { 1545135000.0, CHAN_AERO_600,  8 },
+    { 1545140000.0, CHAN_AERO_600,  9 },
+    { 1545145000.0, CHAN_AERO_600, 10 },
+    { 1545150000.0, CHAN_AERO_600, 11 },
+    { 1545155000.0, CHAN_AERO_600, 12 },
+    { 1545180000.0, CHAN_AERO_600, 13 },
+    { 1545210000.0, CHAN_AERO_600, 14 },
+
+    /* Aero 1200 baud channels */
+    { 1545070000.0, CHAN_AERO_1200, 15 },
+
+    /* Aero 10500 baud channels */
+    { 1546005000.0, CHAN_AERO_10500, 16 },
+    { 1546035000.0, CHAN_AERO_10500, 17 },
 };
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
