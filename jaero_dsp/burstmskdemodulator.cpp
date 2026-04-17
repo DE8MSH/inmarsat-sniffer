@@ -1,3 +1,6 @@
+/* Originally from JAERO by Jonathan Olds (MIT license).
+ * See jaero_dsp/LICENSE for full terms.
+ * Qt dependencies stripped for standalone C++ use. */
 #include "burstmskdemodulator.h"
 #include "coarsefreqestimate.h"
 

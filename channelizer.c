@@ -176,7 +176,7 @@ static double target_output_rate(channel_type_t type) {
  * the target signal passes through to the demod. */
 static double signal_bandwidth(channel_type_t type) {
     switch (type) {
-    case CHAN_STDC_EGC:   return 2400.0;    /* BPSK 1200 baud */
+    case CHAN_STDC_EGC:   return 4800.0;    /* BPSK 1200 baud, ~2x symbol rate */
     case CHAN_AERO_600:   return 6000.0;    /* ±3 kHz cleanup */
     case CHAN_AERO_1200:  return 6000.0;
     case CHAN_AERO_10500: return 15000.0;   /* OQPSK wider signal */

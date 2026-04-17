@@ -1133,7 +1133,8 @@ int main(int argc, char **argv) {
         for (int i = 0; i < sat->num_channels; i++) {
             if (sat->channels[i].type == CHAN_STDC_EGC &&
                 (op_mode != MODE_AERO)) {
-                double output_rate = samp_rate / (int)(samp_rate / (1200.0 * 4.0));
+                double output_rate = channelizer_output_rate(channelizer, sat->channels[i].channel_id);
+                if (output_rate <= 0) output_rate = 19200.0;
                 stdc_decoder = stdc_decoder_create(stdc_message_cb, NULL);
                 stdc_demod = dbpsk_demod_create(output_rate, 1200.0,
                                                   stdc_bits_cb, NULL);

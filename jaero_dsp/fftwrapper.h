@@ -1,3 +1,6 @@
+/* Originally from JAERO by Jonathan Olds (MIT license).
+ * See jaero_dsp/LICENSE for full terms.
+ * Qt dependencies stripped for standalone C++ use. */
 #ifndef FFTWRAPPER_H
 #define FFTWRAPPER_H
 
