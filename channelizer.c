@@ -259,12 +259,15 @@ static int largest_factor_leq(int n, int limit) {
     return best;
 }
 
-/* Per-channel digital gain. Set to 1.0 (unity) for now —
- * SDRReceiver uses 5/3 but our signal chain levels differ.
- * TODO: measure actual constellation amplitude and tune. */
+/* Per-channel digital gain. OQPSK needs higher gain to help the
+ * demod's AGC converge — without it, MSE stays above threshold
+ * during spinup and nothing decodes. MSK works at unity. */
 static float channel_gain(channel_type_t type) {
-    (void)type;
-    return 1.0f;
+    switch (type) {
+    case CHAN_AERO_10500: return 3.0f;
+    case CHAN_AERO_8400:  return 3.0f;
+    default: return 1.0f;
+    }
 }
 
 static double signal_bandwidth(channel_type_t type) {
