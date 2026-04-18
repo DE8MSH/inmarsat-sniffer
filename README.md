@@ -13,7 +13,8 @@ Sister project to [iridium-sniffer](https://github.com/alphafox02/iridium-sniffe
 - Simultaneous STD-C EGC + Aero ACARS decode from one SDR
 - 27-channel parallel demodulation with per-channel worker threads
 - Aero 600/1200 baud MSK (P-channel continuous, via JAERO MskDemodulator + AeroL)
-- Aero 8400/10500 baud OQPSK (C-channel bursts, via JAERO BurstOqpskDemodulator + AeroL)
+- Aero 10500 baud OQPSK (continuous forward link, via JAERO OqpskDemodulator + AeroL)
+- Aero 8400 baud OQPSK (C-channel, via JAERO BurstOqpskDemodulator + AeroL)
 - STD-C EGC: DBPSK demod, Viterbi k=7 FEC, frame sync and message parsing
 - ADS-C position extraction from binary ARINC 620 payloads (tags 7/9/10/14/15/18/19/20)
 - CPDLC (controller-pilot datalink) message surfacing via libacars
@@ -215,7 +216,9 @@ SDR/file/VITA49 --> channelizer (DDC per channel, SIMD-accelerated)
                         |
                         +-- Aero 600/1200 --> JAERO MskDemodulator --> AeroL --+
                         |                    (continuous MSK, AFC)              |
-                        +-- Aero 8400/10500 --> JAERO BurstOqpskDemodulator -->+
+                        +-- Aero 10500 ------> JAERO OqpskDemodulator ------->+
+                        |                    (continuous OQPSK, AFC)            |
+                        +-- Aero 8400 -------> JAERO BurstOqpskDemodulator -->+
                                                                                |
                                                                      libacars (optional)
                                                                      ADS-C, CPDLC, ACARS
@@ -251,10 +254,12 @@ Channels are automatically filtered based on your SDR's actual bandwidth -- the 
 - Per-channel threading with zero drops over multi-hour runs
 - Web dashboard with live aircraft markers and trail history
 
-**Not yet verified (plumbed but needs traffic or signal):**
+**Partially verified:**
 
-- 8400/10500 baud OQPSK C-channel decode -- demod runs, AeroL wired, but no decodes observed in 20+ hours of L-band capture. Forward-link C-channel traffic appears sparse on L-band; most OQPSK activity is on the satellite's C-band feeder link (requires a C-band dish)
+- 10500 baud OQPSK forward link -- continuous OqpskDemodulator ported, first ACARS decode observed on ch15. Signal is weak on L-band forward link and traffic is sporadic. Antenna positioning matters
+- 8400 baud OQPSK C-channel -- burst demod wired, not yet verified (may need C-band dish for return link)
 - STD-C EGC decode -- code path active, demod searches but hasn't synced in testing. May need stronger signal or different satellite
+- Auto-calibration corrects SDR crystal PPM offset at startup (enables RTL-SDR and other SDRs with less accurate clocks)
 
 **Not implemented:**
 
