@@ -1295,7 +1295,7 @@ int main(int argc, char **argv) {
             double offset = fabs(cd->frequency - center_freq);
             if (offset > samp_rate / 2.0) {
                 if (verbose)
-                    fprintf(stderr, "Channel %d (%.3f MHz) outside bandwidth, skipping\n",
+                    fprintf(stderr, "Channel %d (%.3f MHz) outside usable bandwidth, skipping\n",
                             cd->channel_id, cd->frequency / 1e6);
                 continue;
             }
