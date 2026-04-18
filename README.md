@@ -23,7 +23,7 @@ Sister project to [iridium-sniffer](https://github.com/alphafox02/iridium-sniffe
 - SBS/BaseStation output (`--basestation`) for tar1090, VRS, PlanePlotter
 - MQTT output (`--mqtt`) with configurable host, user/pass, topic
 - JSON feed with station-id (`--feed`, `--udp`, `--station-id`)
-- JAERO text format 3 output (`--jaero-format`) for legacy script compatibility
+- JAERO text format 3 output (`--jaero-format=HOST:PORT`) via UDP for legacy script compatibility
 - AES/GES identifiers from ISU layer in all outputs
 - Built-in web dashboard with dark theme, aircraft markers, signal quality bars, trail history, CSV export
 - Two-stage channelizer with per-channel digital gain (MSK=5x, OQPSK=3x)
@@ -174,6 +174,13 @@ inmarsat-sniffer -i rtl-0 --satellite=4F3 --feed --station-id=MY-STATION
 
 # Via UDP (up to 4 endpoints)
 inmarsat-sniffer -i rtl-0 --satellite=4F3 --udp=127.0.0.1:5555
+```
+
+### JAERO text format 3
+
+```bash
+# Send JAERO-compatible text format 3 via UDP (drop-in for existing JAERO scripts)
+inmarsat-sniffer -i sdrplay --satellite=4F3 --jaero-format=127.0.0.1:5554
 ```
 
 ### MQTT

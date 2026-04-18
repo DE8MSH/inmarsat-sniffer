@@ -72,6 +72,8 @@ extern int zmq_base_port;
 extern int web_port;
 extern int feed_enabled;
 extern int jaero_format_enabled;
+extern char *jaero_format_host;
+extern int jaero_format_port;
 extern int agc_enabled;
 #define UDP_MAX 4
 extern char *udp_hosts[UDP_MAX];
@@ -139,7 +141,7 @@ static void usage(int exitcode) {
 "Output:\n"
 "    --web[=PORT]            enable live web dashboard (default port: 8888)\n"
 "    --feed                  output JSON lines to stdout\n"
-"    --jaero-format          output JAERO text format 3 to stderr\n"
+"    --jaero-format=HOST:PORT send JAERO text format 3 via UDP\n"
 "    --udp=HOST:PORT         send JSON messages via UDP (repeatable, max 4)\n"
 "    --basestation[=ENDPOINT] SBS (MSG,3) aircraft feed — PORT for server\n"
 "                             (default 30003), HOST:PORT to push to remote\n"
@@ -276,7 +278,7 @@ void parse_options(int argc, char **argv) {
         { "mqtt-user",          required_argument, NULL, OPT_MQTT_USER },
         { "mqtt-pass",          required_argument, NULL, OPT_MQTT_PASS },
         { "mqtt-topic",         required_argument, NULL, OPT_MQTT_TOPIC },
-        { "jaero-format",       no_argument,       NULL, OPT_JAERO_FORMAT },
+        { "jaero-format",       required_argument, NULL, OPT_JAERO_FORMAT },
         { "agc",                no_argument,       NULL, OPT_AGC },
         { "ppm",                required_argument, NULL, 'p' },
         { NULL, 0, NULL, 0 },
@@ -505,9 +507,21 @@ void parse_options(int argc, char **argv) {
             mqtt_topic = strdup(optarg);
             break;
 
-        case OPT_JAERO_FORMAT:
+        case OPT_JAERO_FORMAT: {
             jaero_format_enabled = 1;
+            char *ep = strdup(optarg);
+            char *colon = strrchr(ep, ':');
+            if (colon) {
+                *colon = '\0';
+                jaero_format_host = strdup(ep);
+                jaero_format_port = atoi(colon + 1);
+            } else {
+                jaero_format_host = strdup("127.0.0.1");
+                jaero_format_port = atoi(ep);
+            }
+            free(ep);
             break;
+        }
 
         case OPT_AGC:
             agc_enabled = 1;

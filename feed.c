@@ -19,7 +19,12 @@
 
 extern int feed_enabled;
 extern int jaero_format_enabled;
+extern char *jaero_format_host;
+extern int jaero_format_port;
 extern char *satellite_name;
+
+static int jaero_udp_sock = -1;
+static struct sockaddr_in jaero_udp_addr;
 #define UDP_MAX 4
 extern char *udp_hosts[UDP_MAX];
 extern int udp_ports[UDP_MAX];
@@ -46,6 +51,25 @@ void feed_init(void) {
             udp_sockets[i] = -1;
         }
     }
+
+    /* JAERO format 3 UDP socket */
+    if (jaero_format_enabled && jaero_format_host) {
+        jaero_udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
+        if (jaero_udp_sock >= 0) {
+            memset(&jaero_udp_addr, 0, sizeof(jaero_udp_addr));
+            jaero_udp_addr.sin_family = AF_INET;
+            jaero_udp_addr.sin_port = htons(jaero_format_port);
+            if (inet_aton(jaero_format_host, &jaero_udp_addr.sin_addr) == 0) {
+                fprintf(stderr, "feed: invalid jaero-format address %s\n", jaero_format_host);
+                close(jaero_udp_sock);
+                jaero_udp_sock = -1;
+            } else {
+                fprintf(stderr, "JAERO format 3 UDP: %s:%d\n",
+                        jaero_format_host, jaero_format_port);
+            }
+        }
+    }
+
     initialized = 1;
 }
 
@@ -287,8 +311,10 @@ void feed_aero_message(const aero_message_t *msg) {
     if (len > 0 && len < (int)sizeof(buf))
         send_json(buf, len);
 
-    /* JAERO text format 3 output to stderr */
+    /* JAERO text format 3 output */
     if (jaero_format_enabled) {
+        char jbuf[4096];
+        int jpos = 0;
         time_t now = time(NULL);
         struct tm tm;
         gmtime_r(&now, &tm);
@@ -305,7 +331,8 @@ void feed_aero_message(const aero_message_t *msg) {
         char label1 = msg->label[1];
         if ((unsigned char)label1 == 127) label1 = 'd';
 
-        fprintf(stderr, "\n%02d:%02d:%02d %02d-%02d-%02d UTC "
+        jpos += snprintf(jbuf + jpos, sizeof(jbuf) - jpos,
+                "%02d:%02d:%02d %02d-%02d-%02d UTC "
                 "AES:%06X GES:%02X %c %s %c %c%c %c",
                 tm.tm_hour, tm.tm_min, tm.tm_sec,
                 tm.tm_mday, tm.tm_mon + 1, tm.tm_year % 100,
@@ -318,15 +345,25 @@ void feed_aero_message(const aero_message_t *msg) {
                 msg->block_id ? msg->block_id : ' ');
 
         if (msg->text_len > 0) {
-            fprintf(stderr, "\n\t");
-            for (int i = 0; i < msg->text_len; i++) {
+            jpos += snprintf(jbuf + jpos, sizeof(jbuf) - jpos, "\n\t");
+            for (int i = 0; i < msg->text_len && jpos < (int)sizeof(jbuf) - 4; i++) {
                 char c = msg->text[i];
                 if (c == '\r') continue;
-                if (c == '\n') fprintf(stderr, "\n\t");
-                else fputc(c, stderr);
+                if (c == '\n') { jbuf[jpos++] = '\n'; jbuf[jpos++] = '\t'; }
+                else jbuf[jpos++] = c;
             }
         }
-        fprintf(stderr, "\n");
+        jbuf[jpos++] = '\n';
+        jbuf[jpos] = '\0';
+
+        /* Send over UDP if configured */
+        if (jaero_udp_sock >= 0) {
+            sendto(jaero_udp_sock, jbuf, jpos, 0,
+                   (struct sockaddr *)&jaero_udp_addr, sizeof(jaero_udp_addr));
+        } else {
+            /* Fall back to stderr if no UDP endpoint */
+            fprintf(stderr, "\n%s", jbuf);
+        }
     }
 }
 

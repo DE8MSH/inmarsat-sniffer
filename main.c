@@ -349,6 +349,8 @@ int web_enabled = 0;
 int web_port = 8888;
 int feed_enabled = 0;
 int jaero_format_enabled = 0;
+char *jaero_format_host = NULL;
+int jaero_format_port = 0;
 int agc_enabled = 0;
 #define UDP_MAX 4
 char *udp_hosts[UDP_MAX];
