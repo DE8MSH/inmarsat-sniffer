@@ -29,7 +29,7 @@
  * the filter works well. Stages cascade: e.g. 1000x = 10 * 10 * 10.
  */
 #define MAX_STAGES 4
-#define STAGE_FIR_TAPS 31
+#define STAGE_FIR_TAPS 63  /* doubled from 31; two-stage refactor will improve further */
 #define CLEANUP_FIR_TAPS 127  /* final narrowband filter at output rate */
 
 typedef struct {
