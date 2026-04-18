@@ -257,7 +257,40 @@ static int build_json(char *buf, int maxlen) {
 
         pos += snprintf(buf + pos, maxlen - pos, "]}");
     }
-    pos += snprintf(buf + pos, maxlen - pos, "]}");
+    pos += snprintf(buf + pos, maxlen - pos, "],");
+
+    /* Per-channel status (from jaero_chans in main.c) */
+    {
+        extern int num_jaero_chans;
+        typedef struct {
+            int channel_id;
+            int baud_rate;
+            unsigned long msg_count;
+            unsigned long burst_count;
+            double last_msg_time;
+            unsigned long drops;
+        } chan_web_info_t;
+
+        /* Gather channel info without holding main's lock */
+        extern void web_get_channel_info(chan_web_info_t *out, int *n);
+        chan_web_info_t chinfo[32];
+        int nch = 0;
+        web_get_channel_info(chinfo, &nch);
+
+        pos += snprintf(buf + pos, maxlen - pos, "\"channels\":[");
+        for (int i = 0; i < nch && pos < maxlen - 256; i++) {
+            if (i > 0) buf[pos++] = ',';
+            double age = now_unix() - chinfo[i].last_msg_time;
+            if (chinfo[i].last_msg_time < 1) age = -1;
+            pos += snprintf(buf + pos, maxlen - pos,
+                "{\"ch\":%d,\"baud\":%d,\"msgs\":%lu,\"age\":%.0f}",
+                chinfo[i].channel_id, chinfo[i].baud_rate,
+                chinfo[i].msg_count, age);
+        }
+        pos += snprintf(buf + pos, maxlen - pos, "]");
+    }
+
+    pos += snprintf(buf + pos, maxlen - pos, "}");
 
     pthread_mutex_unlock(&state.lock);
     return pos;
@@ -296,10 +329,16 @@ static const char HTML_PAGE[] =
 ".leaflet-control-layers label{color:#e2e8f0}\n"
 "#side{position:absolute;right:0;top:44px;bottom:0;width:320px;\n"
 "  background:rgba(15,23,42,0.92);border-left:1px solid #334155;\n"
-"  overflow-y:auto;padding:8px;font-size:11px;\n"
+"  font-size:11px;display:flex;flex-direction:column;\n"
 "  font-family:'SF Mono',Consolas,monospace;color:#cbd5e1;z-index:400}\n"
-"#side h3{font-size:11px;color:#94a3b8;text-transform:uppercase;\n"
-"  letter-spacing:1px;margin:8px 0 4px;font-weight:600}\n"
+"#tabs{display:flex;border-bottom:1px solid #334155;flex-shrink:0}\n"
+".tab{flex:1;padding:6px 0;text-align:center;font-size:10px;cursor:pointer;\n"
+"  color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:600;\n"
+"  border-bottom:2px solid transparent}\n"
+".tab.active{color:#38bdf8;border-bottom-color:#38bdf8}\n"
+".tab:hover{color:#94a3b8}\n"
+".tab-content{flex:1;overflow-y:auto;padding:8px;display:none}\n"
+".tab-content.active{display:block}\n"
 ".msg{background:#1e293b;border-left:2px solid #38bdf8;margin:3px 0;\n"
 "  padding:4px 6px;word-wrap:break-word;border-radius:2px}\n"
 ".msg.egc{border-color:#4ade80}\n"
@@ -310,7 +349,7 @@ static const char HTML_PAGE[] =
 "</style></head><body>\n"
 "<div id=\"bar\">\n"
 "  <span class=\"title\">inmarsat-sniffer</span>\n"
-"  <span class=\"stat\">Aircraft <span id=\"n-ac\" class=\"val\">0</span></span>\n"
+"  <span class=\"stat\">Locked <span id=\"n-ac\" class=\"val\">0</span></span>\n"
 "  <span class=\"stat\">ACARS <span id=\"n-acars\" class=\"val\">0</span></span>\n"
 "  <span class=\"stat\">Positions <span id=\"n-pos\" class=\"val\">0</span></span>\n"
 "  <span class=\"stat\">STD-C <span id=\"n-stdc\" class=\"val\">0</span></span>\n"
@@ -319,12 +358,24 @@ static const char HTML_PAGE[] =
 "</div>\n"
 "<div id=\"map\"></div>\n"
 "<div id=\"side\">\n"
-"  <h3>Aero ACARS</h3>\n"
-"  <div id=\"aero-list\"></div>\n"
-"  <h3>STD-C / EGC</h3>\n"
-"  <div id=\"stdc-list\"></div>\n"
+"  <div id=\"tabs\">\n"
+"    <div class=\"tab active\" onclick=\"switchTab('acars')\">ACARS</div>\n"
+"    <div class=\"tab\" onclick=\"switchTab('stdc')\">STD-C</div>\n"
+"    <div class=\"tab\" onclick=\"switchTab('channels')\">Channels</div>\n"
+"  </div>\n"
+"  <div id=\"tab-acars\" class=\"tab-content active\"><div id=\"aero-list\"></div></div>\n"
+"  <div id=\"tab-stdc\" class=\"tab-content\"><div id=\"stdc-list\"></div></div>\n"
+"  <div id=\"tab-channels\" class=\"tab-content\"><div id=\"ch-panel\" style=\"font-size:10px;line-height:1.6\"></div></div>\n"
 "</div>\n"
 "<script>"
+"function switchTab(name){"
+"  var tabs=document.querySelectorAll('.tab');"
+"  var panes=document.querySelectorAll('.tab-content');"
+"  tabs.forEach(function(t){t.classList.remove('active')});"
+"  panes.forEach(function(p){p.classList.remove('active')});"
+"  document.querySelector('.tab[onclick*=\"'+name+'\"]').classList.add('active');"
+"  document.getElementById('tab-'+name).classList.add('active');"
+"}\n"
 "var map=L.map('map',{center:[20,0],zoom:3});"
 "L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',"
 "{attribution:'CartoDB',maxZoom:19}).addTo(map);"
@@ -333,7 +384,7 @@ static const char HTML_PAGE[] =
 "var ac_layer=L.layerGroup().addTo(map);"
 "var trail_layer=L.layerGroup().addTo(map);"
 "L.control.layers(null,{'STD-C':stdc_layer,'Aircraft':ac_layer,"
-"'Trails':trail_layer}).addTo(map);"
+"'Trails':trail_layer},{position:'bottomleft'}).addTo(map);"
 ""
 "var ac_markers={};"
 "var allAcars=[];"
@@ -368,6 +419,28 @@ static const char HTML_PAGE[] =
 "document.getElementById('n-stdc').textContent=d.stdc?d.stdc.length:0;"
 "document.getElementById('status').style.color='#22c55e';"
 "document.getElementById('status').textContent='live';"
+"if(d.channels){"
+"  var cp=document.getElementById('ch-panel');"
+"  var locked=0;"
+"  var html='';"
+"  function fmtN(n){return n>=10000?(n/1000).toFixed(1)+'k':n>=1000?(n/1000).toFixed(1)+'k':''+n}"
+"  d.channels.forEach(function(c){"
+"    var active=c.msgs>0&&c.age>=0&&c.age<120;"
+"    if(active)locked++;"
+"    var baud=c.baud>=8400?(c.baud/1000+'k OQPSK'):(c.baud+' MSK');"
+"    var dot=active?'\\u25CF':'\\u25CB';"
+"    var color=active?'#38bdf8':'#475569';"
+"    var msgs=c.msgs>0?fmtN(c.msgs):'\\u2014';"
+"    html+='<div style=\"color:'+color+';display:flex;gap:6px;padding:1px 0\">'"
+"      +'<span>'+dot+'</span>'"
+"      +'<span style=\"min-width:32px\">ch'+c.ch+'</span>'"
+"      +'<span style=\"min-width:78px\">'+baud+'</span>'"
+"      +'<span style=\"min-width:38px;text-align:right\">'+msgs+'</span>'"
+"      +'</div>';"
+"  });"
+"  document.getElementById('n-ac').textContent=locked+'/'+d.channels.length;"
+"  cp.innerHTML=html;"
+"}"
 "if(d.aircraft){d.aircraft.forEach(function(a){"
 "  var isDup=allAcars.some(function(e){return e.reg===a.reg&&e.t===a.last_seen});"
 "  if(!isDup)allAcars.push({t:a.last_seen,reg:a.reg,flight:a.flight,"

@@ -64,10 +64,39 @@ typedef struct {
 
     pthread_t thread;
     atomic_int thread_run;
+
+    /* Per-channel stats for web dashboard */
+    atomic_ulong msg_count;
+    atomic_ulong burst_count;
+    double last_msg_time;
 } jaero_chan_t;
 
 static jaero_chan_t jaero_chans[MAX_JAERO_DEMODS];
 static int num_jaero_chans = 0;
+
+/* Export channel stats for web dashboard. Called from web.c build_json. */
+typedef struct {
+    int channel_id;
+    int baud_rate;
+    unsigned long msg_count;
+    unsigned long burst_count;
+    double last_msg_time;
+    unsigned long drops;
+} chan_web_info_t;
+
+void web_get_channel_info(chan_web_info_t *out, int *n) {
+    int count = num_jaero_chans;
+    if (count > 32) count = 32;
+    for (int i = 0; i < count; i++) {
+        out[i].channel_id = jaero_chans[i].channel_id;
+        out[i].baud_rate = jaero_chans[i].baud_rate;
+        out[i].msg_count = atomic_load(&jaero_chans[i].msg_count);
+        out[i].burst_count = atomic_load(&jaero_chans[i].burst_count);
+        out[i].last_msg_time = jaero_chans[i].last_msg_time;
+        out[i].drops = atomic_load(&jaero_chans[i].drops);
+    }
+    *n = count;
+}
 
 /* Per-channel worker: pop IQ from ring, feed matching demod. Runs until
  * thread_run is cleared. */
@@ -589,6 +618,15 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
     /* AeroL only calls us with acarsitem.valid == true, so every event
      * here is a CRC-verified ACARS frame. Surface it in the counter. */
     atomic_fetch_add(&stat_aero_crc_ok, 1);
+
+    /* Per-channel stats */
+    for (int i = 0; i < num_jaero_chans; i++) {
+        if (jaero_chans[i].channel_id == channel_id) {
+            atomic_fetch_add(&jaero_chans[i].msg_count, 1);
+            jaero_chans[i].last_msg_time = (double)time(NULL);
+            break;
+        }
+    }
 
     /* Verbose-only raw dump: hex + ASCII with MSB stripped (ACARS is
      * 7-bit with odd parity; bytes above 0x7F are parity-inverted). */
