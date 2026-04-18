@@ -852,6 +852,38 @@ static void channel_output_cb(int channel_id, channel_type_t type,
                                 void *user) {
     (void)user;
 
+    /* Per-channel power measurement (verbose only) */
+    if (verbose) {
+        static double ch_pwr[32] = {0};
+        static int ch_cnt[32] = {0};
+        static int pwr_print = 0;
+        int idx = -1;
+        for (int i = 0; i < num_jaero_chans; i++) {
+            if (jaero_chans[i].channel_id == channel_id) { idx = i; break; }
+        }
+        if (idx >= 0 && idx < 32) {
+            double pwr = 0;
+            for (int i = 0; i < num_samples; i++)
+                pwr += crealf(samples[i]) * crealf(samples[i]) +
+                       cimagf(samples[i]) * cimagf(samples[i]);
+            ch_pwr[idx] += pwr;
+            ch_cnt[idx] += num_samples;
+        }
+        if (++pwr_print >= 5000) {
+            pwr_print = 0;
+            fprintf(stderr, "\n[PWR]");
+            for (int i = 0; i < num_jaero_chans && i < 32; i++) {
+                if (ch_cnt[i] > 0) {
+                    double rms = sqrt(ch_pwr[i] / ch_cnt[i]);
+                    fprintf(stderr, " ch%d=%.4f", jaero_chans[i].channel_id, rms);
+                    ch_pwr[i] = 0;
+                    ch_cnt[i] = 0;
+                }
+            }
+            fprintf(stderr, "\n");
+        }
+    }
+
 #ifdef HAVE_ZMQ
     if (zmq_enabled) {
         double output_rate = channelizer_output_rate(channelizer, channel_id);
@@ -1156,15 +1188,19 @@ int main(int argc, char **argv) {
         if (samp_rate == 0) {
             double span = hi - lo;
             samp_rate = span * 1.2;
-            if (samp_rate < 2400000)
-                samp_rate = 2400000;
+            /* RTL-SDR: use 1.536 MHz (matching SDRReceiver) — narrower
+             * bandwidth gives better effective SNR on 8-bit ADC.
+             * Other SDRs: floor at 2.4 MHz for wider channel coverage. */
+            double min_rate = (rtl_dev_index >= 0) ? 1536000 : 2400000;
+            if (samp_rate < min_rate)
+                samp_rate = min_rate;
             if (verbose)
                 fprintf(stderr, "Auto sample rate: %.3f MHz\n", samp_rate / 1e6);
         }
     }
 
     if (samp_rate == 0)
-        samp_rate = 2400000;
+        samp_rate = (rtl_dev_index >= 0) ? 1536000 : 2400000;
     if (center_freq == 0)
         center_freq = 1545100000.0;
 

@@ -92,7 +92,7 @@ DATE=$(date +%Y%m%d_%H%M%S)
 
 case "$SDR" in
     rtl)
-        [ -z "$RATE" ] && RATE=2400000
+        [ -z "$RATE" ] && RATE=1536000  # matches SDRReceiver — better SNR on 8-bit ADC
         [ -z "$GAIN" ] && GAIN=49.6
         EXT="cu8"
         [ -z "$OUTPUT" ] && OUTPUT="capture_${SAT}_rtl_${DATE}.${EXT}"

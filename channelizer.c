@@ -259,15 +259,12 @@ static int largest_factor_leq(int n, int limit) {
     return best;
 }
 
-/* Per-channel digital gain. OQPSK needs higher gain to help the
- * demod's AGC converge — without it, MSE stays above threshold
- * during spinup and nothing decodes. MSK works at unity. */
+/* Per-channel digital gain. Unity for all — the feedIQ path in
+ * the demodulators already has a 5.0x gain for int16 audio scaling.
+ * Adding channelizer gain on top caused OQPSK clipping on strong signals. */
 static float channel_gain(channel_type_t type) {
-    switch (type) {
-    case CHAN_AERO_10500: return 3.0f;
-    case CHAN_AERO_8400:  return 3.0f;
-    default: return 1.0f;
-    }
+    (void)type;
+    return 1.0f;
 }
 
 static double signal_bandwidth(channel_type_t type) {
