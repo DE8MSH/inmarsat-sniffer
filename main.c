@@ -865,45 +865,28 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         return;
     }
 
-    /* Auto-calibrate: measure carrier offset from an aero channel,
+    /* Auto-calibrate: measure carrier offset from first aero channel,
      * then adjust channelizer center freq to compensate SDR PPM error.
-     * Runs at startup, then re-checks every 60 seconds to track drift. */
+     * Runs once at startup only — periodic recal was causing drift on
+     * SDRs with stable oscillators (SDRplay). */
     {
         static float complex cal_buf[1024];
         static int cal_n = 0;
         static int cal_ch = -1;
-        static double cal_next_time = 0;
+        static int cal_done = 0;
         #define CAL_SIZE 1024
-        #define CAL_INTERVAL 60.0  /* seconds between recalibrations */
 
-        double now = 0;
-        if (cal_ch < 0 || cal_next_time == 0) {
-            struct timespec ts;
-            clock_gettime(CLOCK_MONOTONIC, &ts);
-            now = ts.tv_sec + ts.tv_nsec / 1e9;
-            if (cal_next_time == 0) cal_next_time = now;
+        if (!cal_done && cal_ch < 0 && (type == CHAN_AERO_600 || type == CHAN_AERO_1200)) {
+            cal_ch = channel_id;
+            cal_n = 0;
         }
-
-        /* Start a new calibration cycle on an MSK channel */
-        if (cal_ch < 0 && (type == CHAN_AERO_600 || type == CHAN_AERO_1200)) {
-            if (now == 0) {
-                struct timespec ts;
-                clock_gettime(CLOCK_MONOTONIC, &ts);
-                now = ts.tv_sec + ts.tv_nsec / 1e9;
-            }
-            if (now >= cal_next_time) {
-                cal_ch = channel_id;
-                cal_n = 0;
-            }
-        }
-        if (cal_ch >= 0 && channel_id == cal_ch) {
+        if (!cal_done && cal_ch >= 0 && channel_id == cal_ch) {
             int need = CAL_SIZE - cal_n;
             int take = num_samples < need ? num_samples : need;
             memcpy(&cal_buf[cal_n], samples, take * sizeof(float complex));
             cal_n += take;
 
             if (cal_n >= CAL_SIZE) {
-                /* Peak-finding via magnitude-squared DFT */
                 double max_pwr = 0;
                 int max_bin = 0;
                 for (int k = 0; k < CAL_SIZE; k++) {
@@ -925,11 +908,10 @@ static void channel_output_cb(int channel_id, channel_type_t type,
                     fprintf(stderr, "Auto-cal: carrier offset %.0f Hz on ch%d, adjusting center freq\n",
                             offset_hz, cal_ch);
                     channelizer_adjust_center(channelizer, offset_hz);
+                } else {
+                    fprintf(stderr, "Auto-cal: centered (%.0f Hz), no adjustment\n", offset_hz);
                 }
-                cal_ch = -1;
-                struct timespec ts;
-                clock_gettime(CLOCK_MONOTONIC, &ts);
-                cal_next_time = ts.tv_sec + ts.tv_nsec / 1e9 + CAL_INTERVAL;
+                cal_done = 1;
             }
         }
     }
