@@ -1193,10 +1193,17 @@ int main(int argc, char **argv) {
         if (samp_rate == 0) {
             double span = hi - lo;
             samp_rate = span * 1.2;
-            /* RTL-SDR: use 1.536 MHz (matching SDRReceiver) — narrower
-             * bandwidth gives better effective SNR on 8-bit ADC.
-             * Other SDRs: floor at 2.4 MHz for wider channel coverage. */
-            double min_rate = (rtl_dev_index >= 0) ? 1536000 : 2400000;
+            /* Per-SDR optimized defaults matching SDRReceiver:
+             *   RTL-SDR: 1.536 MHz (clean 32x decimation, best SNR on 8-bit)
+             *   SDRplay: 3.072 MHz (clean 64x decimation, native ADC rate)
+             *   Others:  2.4 MHz floor */
+            double min_rate;
+            if (rtl_dev_index >= 0)
+                min_rate = 1536000;
+            else if (sdrplay_serial != NULL)
+                min_rate = 3072000;
+            else
+                min_rate = 2400000;
             if (samp_rate < min_rate)
                 samp_rate = min_rate;
             if (verbose)
@@ -1204,8 +1211,11 @@ int main(int argc, char **argv) {
         }
     }
 
-    if (samp_rate == 0)
-        samp_rate = (rtl_dev_index >= 0) ? 1536000 : 2400000;
+    if (samp_rate == 0) {
+        if (rtl_dev_index >= 0)           samp_rate = 1536000;
+        else if (sdrplay_serial != NULL)  samp_rate = 3072000;
+        else                              samp_rate = 2400000;
+    }
     if (center_freq == 0)
         center_freq = 1545100000.0;
 
