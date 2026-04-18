@@ -146,6 +146,9 @@ private:
 
     /* feedIQ mixing state (per-instance) */
     double feediq_phase;
+
+    /* Per-instance — was static in JAERO (single-instance) */
+    int freqest_countdown;
 };
 
 #endif // MSKDEMODULATOR_H

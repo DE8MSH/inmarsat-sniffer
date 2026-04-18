@@ -165,8 +165,8 @@ static double target_output_rate(channel_type_t type) {
     case CHAN_STDC_EGC:   return 1200.0 * 16.0;
     case CHAN_AERO_600:   return 48000.0;   /* 80 SPS — also used by ZMQ to JAERO */
     case CHAN_AERO_1200:  return 48000.0;  /* 40 SPS */
-    case CHAN_AERO_10500: return 10500.0 * 8.0;
-    case CHAN_AERO_8400:  return 8400.0 * 8.0;
+    case CHAN_AERO_10500: return 48000.0;  /* must match OqpskDemodulator's hardcoded Fs */
+    case CHAN_AERO_8400:  return 48000.0;  /* must match BurstOqpskDemodulator's hardcoded Fs */
     default: return 48000.0;
     }
 }

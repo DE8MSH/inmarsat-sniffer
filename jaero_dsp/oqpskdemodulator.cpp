@@ -131,6 +131,11 @@ OqpskDemodulator::OqpskDemodulator()
 
     coarseCounter = 0;
     feediq_phase  = 0.0;
+    sig2_last     = cpx_type(0, 0);
+    yui           = 0;
+    pt_d          = cpx_type(0, 0);
+    freqest_countdown  = 4;
+    freqest_countdown2 = 5;
 }
 
 OqpskDemodulator::~OqpskDemodulator()
@@ -258,23 +263,21 @@ void OqpskDemodulator::FreqOffsetEstimateSlot(double freq_offset_est)
         mixer_fir_pre.SetFreq(mixer_center.GetFreqHz() + freq_offset_est, Fs);
     }
 
-    /* Prevent bad stable states */
-    static int countdown2 = 5;
+    /* Prevent bad stable states (per-instance, not static) */
     if ((mse < signalthreshold) && (!dcd)) {
-        if (countdown2 > 0) countdown2--;
+        if (freqest_countdown2 > 0) freqest_countdown2--;
         else {
             mixer2.SetFreq(mixer_center.GetFreqHz() + freq_offset_est);
         }
-    } else countdown2 = 5;
+    } else freqest_countdown2 = 5;
 
-    static int countdown = 4;
     if ((mse > signalthreshold) &&
         (fabs(mixer2.GetFreqHz() - (mixer_center.GetFreqHz() + freq_offset_est)) > 3.0)) {
         mixer2.SetFreq(mixer_center.GetFreqHz() + freq_offset_est);
     }
     if (afc && (mse < signalthreshold) &&
         (fabs(mixer2.GetFreqHz() - mixer_center.GetFreqHz()) > 3.0)) {
-        if (countdown > 0) countdown--;
+        if (freqest_countdown > 0) freqest_countdown--;
         else {
             mixer_center.SetFreq(mixer2.GetFreqHz());
             if (mixer_center.GetFreqHz() < lockingbw / 2.0)
@@ -285,7 +288,7 @@ void OqpskDemodulator::FreqOffsetEstimateSlot(double freq_offset_est)
             for (size_t j = 0; j < bbcycbuff.size(); j++)
                 bbcycbuff[j] = cpx_type(0, 0);
         }
-    } else countdown = 4;
+    } else freqest_countdown = 4;
 }
 
 /* ORIGINAL JAERO OqpskDemodulator::writeData() DSP path — identical math,
@@ -384,20 +387,20 @@ void OqpskDemodulator::processAudio(const short *data, int num_samples)
             st_osc.SetFreq(st_osc_ref.GetFreqHz() + 0.1);
 
         /* ---- Symbol decision ---- */
-        static cpx_type sig2_last = cpx_type(0, 0);
+        /* NOTE: these were 'static' in JAERO (single-instance). Must be
+         * per-instance for our multi-channel architecture. Moved to
+         * member variables sig2_last, yui, pt_d in the header. */
         if (st_osc.IfHavePassedPoint(ee)) {
             /* Interpolate */
             double pt_last = st_osc.FractionOfSampleItPassesBy;
             double pt_this = 1.0 - pt_last;
             cpx_type pt   = pt_this * sig2 + pt_last * sig2_last;
 
-            static int yui = 0;
             yui++; yui %= 2;
-            static cpx_type pt_d = cpx_type(0, 0);
             if (!yui) {
-                pt_d = pt;
+                this->pt_d = pt;
             } else {
-                cpx_type pt_qpsk = cpx_type(pt.real(), pt_d.imag());
+                cpx_type pt_qpsk = cpx_type(pt.real(), this->pt_d.imag());
 
                 /* Carrier tracking: BPSK 2x method */
                 double ct_xt   = tanh(pt.imag()) * pt.real();

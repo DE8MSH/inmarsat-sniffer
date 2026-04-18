@@ -139,21 +139,14 @@ static void *chan_worker_fn(void *arg)
             }
             jaero_pmsk_feed_iq(jc->pmsk, iq_dbl, take);
         } else if (jc->oqpsk_cont) {
-            /* Continuous OQPSK (10500 baud): mix IQ → audio at AUDIO_CENTER_HZ,
-             * then feed OqpskDemodulator's audio path (identical to JAERO GUI). */
-            int16_t pcm[BATCH];
+            /* Continuous OQPSK: feed IQ directly via feedIQ (same approach
+             * as MSK which works). feedIQ handles IQ→audio conversion
+             * internally matching JAERO's proven path. */
             for (unsigned i = 0; i < take; i++) {
-                double ca = cos(jc->mixer_phase);
-                double sa = sin(jc->mixer_phase);
-                double audio = creal((double complex)batch[i] * (ca + sa * I));
-                jc->mixer_phase += jc->mixer_inc;
-                if (jc->mixer_phase > 2.0 * M_PI) jc->mixer_phase -= 2.0 * M_PI;
-                double scaled = audio * AUDIO_GAIN * 32768.0;
-                if (scaled > 32767.0) scaled = 32767.0;
-                if (scaled < -32768.0) scaled = -32768.0;
-                pcm[i] = (int16_t)scaled;
+                iq_dbl[i*2]   = crealf(batch[i]);
+                iq_dbl[i*2+1] = cimagf(batch[i]);
             }
-            jaero_oqpsk_cont_feed_audio(jc->oqpsk_cont, pcm, take);
+            jaero_oqpsk_cont_feed_iq(jc->oqpsk_cont, iq_dbl, take);
         } else if (jc->oqpsk) {
             /* Burst OQPSK (8400 baud): same audio conversion path. */
             int16_t pcm[BATCH];

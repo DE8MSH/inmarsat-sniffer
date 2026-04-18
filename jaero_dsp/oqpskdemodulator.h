@@ -142,6 +142,14 @@ private:
 
     /* feedIQ mixing state */
     double feediq_phase;
+
+    /* Per-instance state — were static locals in JAERO (single-instance).
+     * Must be per-instance for multi-channel parallel demodulation. */
+    cpx_type sig2_last;
+    int yui;
+    cpx_type pt_d;
+    int freqest_countdown;
+    int freqest_countdown2;
 };
 
 #endif /* OQPSKDEMODULATOR_H */

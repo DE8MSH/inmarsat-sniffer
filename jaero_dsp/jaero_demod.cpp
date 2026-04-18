@@ -390,6 +390,11 @@ static void oqpsk_cont_bits_adapter(const short *bits, int num_bits, void *ctx)
 {
     jaero_oqpsk_cont_demod_t *d = (jaero_oqpsk_cont_demod_t *)ctx;
 
+    static int oqpsk_bit_count = 0;
+    oqpsk_bit_count += num_bits;
+    if (oqpsk_bit_count % 1000 < num_bits)
+        fprintf(stderr, " [OQPSK-CONT bits=%d ch%d]", oqpsk_bit_count, d->channel_id);
+
     if (d->aerol) {
         std::vector<short> sv(bits, bits + num_bits);
         d->aerol->processDemodulatedSoftBits(sv);

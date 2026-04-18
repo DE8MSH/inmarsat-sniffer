@@ -86,6 +86,7 @@ MskDemodulator::MskDemodulator()
     correctionfactor = 1.0;
     coarseCounter = 0;
     feediq_phase = 0.0;
+    freqest_countdown = 4;
 }
 
 MskDemodulator::~MskDemodulator()
@@ -224,7 +225,8 @@ void MskDemodulator::CenterFreqChangedSlot(double f)
 
 void MskDemodulator::FreqOffsetEstimateSlot(double freq_offset_est)
 {
-    static int countdown = 4;
+    /* Was static in JAERO (single-instance). Must be per-instance. */
+    int &countdown = this->freqest_countdown;
     if ((mse > signalthreshold) &&
         (fabs(mixer2.GetFreqHz() - (mixer_center.GetFreqHz() + freq_offset_est)) > 0.0)) {
         mixer2.SetFreq(mixer_center.GetFreqHz() + freq_offset_est);
