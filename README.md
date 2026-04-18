@@ -64,6 +64,7 @@ cd inmarsat-sniffer
 # Core dependencies
 sudo apt install build-essential cmake pkg-config
 
+
 # SDR libraries (install what you have)
 sudo apt install librtlsdr-dev       # RTL-SDR native
 sudo apt install libhackrf-dev       # HackRF One

@@ -135,6 +135,15 @@ else()
     message(STATUS "SIMD: scalar only (unrecognised platform)")
 endif()
 
+# Vendored libcorrect (BSD 3-clause, github.com/quiet/libcorrect)
+# Used by JAERO's AeroL Viterbi + Reed-Solomon decoder
+set(LIBCORRECT_DIR ${PROJECT_SOURCE_DIR}/jaero_dsp/libcorrect)
+file(GLOB LIBCORRECT_SOURCES
+    ${LIBCORRECT_DIR}/src/convolutional/*.c
+    ${LIBCORRECT_DIR}/src/reed-solomon/*.c
+    ${LIBCORRECT_DIR}/src/fec_shim.c)
+include_directories(${LIBCORRECT_DIR}/include)
+
 # JAERO DSP library (C++ with C API, stripped of Qt)
 set(JAERO_DSP_SOURCES
     ${PROJECT_SOURCE_DIR}/jaero_dsp/DSP.cpp
@@ -149,7 +158,7 @@ set(JAERO_DSP_SOURCES
     ${PROJECT_SOURCE_DIR}/jaero_dsp/aerol.cpp
     ${PROJECT_SOURCE_DIR}/jaero_dsp/jaero_demod.cpp
 )
-list(APPEND SOURCES ${JAERO_DSP_SOURCES})
+list(APPEND SOURCES ${JAERO_DSP_SOURCES} ${LIBCORRECT_SOURCES})
 
 # SDR backends
 if(SOAPYSDR_FOUND)
@@ -212,8 +221,7 @@ target_link_libraries(inmarsat-sniffer PRIVATE
     Threads::Threads
     m
     stdc++
-    correct
-)
+   )
 
 # Link SDR backends
 if(SOAPYSDR_FOUND)
