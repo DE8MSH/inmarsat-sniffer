@@ -203,9 +203,11 @@ jaero_oqpsk_demod_t *jaero_oqpsk_create(double sample_rate, double symbol_rate, 
     d->acars_user = NULL;
     d->demod = new BurstOqpskDemodulator();
 
-    /* AeroL in BURST mode for OQPSK (R/T-style short bursts). */
+    /* AeroL: 10500 forward link is continuous (not burst), same as
+     * P-channel MSK. JAERO GUI confirms "10500" (continuous) decodes,
+     * "10500 burst" does not on L-band forward link. */
     d->aerol = new AeroL();
-    d->aerol->setSettings(symbol_rate, true);  /* burstmode=true */
+    d->aerol->setSettings(symbol_rate, false);  /* continuous mode */
 
     BurstOqpskDemodulator::Settings s;
     s.Fs = sample_rate;
