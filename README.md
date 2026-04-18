@@ -254,10 +254,14 @@ Channels are automatically filtered based on your SDR's actual bandwidth -- the 
 - Per-channel threading with zero drops over multi-hour runs
 - Web dashboard with live aircraft markers and trail history
 
-**Partially verified:**
+**Working:**
 
-- 10500 baud OQPSK forward link -- continuous OqpskDemodulator ported, first ACARS decode observed on ch15. Signal is weak on L-band forward link and traffic is sporadic. Antenna positioning matters
-- 8400 baud OQPSK C-channel -- burst demod wired, not yet verified (may need C-band dish for return link)
+- 10500 baud OQPSK forward link -- continuous OqpskDemodulator, multiple aircraft decoded across ch13-16 on both SDRplay and RTL-SDR (American Airlines, Lufthansa, Brussels Airlines, Virgin Atlantic, EVA Air confirmed). Traffic is sporadic; antenna positioning affects signal quality
+- RTL-SDR Blog V4 -- MSK and 10500 OQPSK decoding verified. Auto-calibration corrects crystal PPM offset at startup
+
+**Not yet verified (plumbed, awaiting traffic):**
+
+- 8400 baud OQPSK C-channel -- continuous OqpskDemodulator wired, cleanup filter widened, but 8400 channels are on-demand (voice/data sessions) and may be silent for extended periods
 - STD-C EGC decode -- code path active, demod searches but hasn't synced in testing. May need stronger signal or different satellite
 - Auto-calibration corrects SDR crystal PPM offset at startup (enables RTL-SDR and other SDRs with less accurate clocks)
 
