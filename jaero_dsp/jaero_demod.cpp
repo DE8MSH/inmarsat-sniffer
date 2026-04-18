@@ -427,7 +427,7 @@ jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double sym
      * 10.5 kHz locking bandwidth. feedAudio path expects signal at freq_center.
      * feedIQ wrapper mixes IQ → audio at freq_center (same as ZMQ output). */
     s.freq_center              = 8000.0;
-    s.lockingbw                = 10500.0;
+    s.lockingbw                = (symbol_rate <= 8400) ? 5000.0 : 10500.0;
     s.coarsefreqest_fft_power  = 14;
     s.signalthreshold          = 0.65; /* JAERO default — higher = more permissive */
 

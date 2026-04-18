@@ -993,21 +993,23 @@ static void channel_output_cb(int channel_id, channel_type_t type,
             jc->baud_rate   = 8400;
             jc->pmsk        = NULL;
             jc->burstmsk    = NULL;
-            jc->oqpsk_cont  = NULL;
+            jc->oqpsk       = NULL;
             jc->mixer_phase = 0.0;
             jc->mixer_inc   = 2.0 * M_PI * AUDIO_CENTER_HZ / output_rate;
 
-            jc->oqpsk = jaero_oqpsk_create(output_rate, 8400.0,
-                                             channel_id, jaero_bits_cb, NULL);
-            if (jc->oqpsk)
-                jaero_oqpsk_set_acars_callback(jc->oqpsk,
-                                                jaero_acars_data_cb, NULL);
-            fprintf(stderr, "[OQPSK-BURST ch%d] baud=8400 rate=%.0f (burst)\n",
+            /* JAERO only has "8400" mode (no burst variant) — use
+             * continuous OqpskDemodulator, same as 10500. */
+            jc->oqpsk_cont = jaero_oqpsk_cont_create(output_rate, 8400.0,
+                                                       channel_id, jaero_bits_cb, NULL);
+            if (jc->oqpsk_cont)
+                jaero_oqpsk_cont_set_acars_callback(jc->oqpsk_cont,
+                                                     jaero_acars_data_cb, NULL);
+            fprintf(stderr, "[OQPSK-CONT ch%d] baud=8400 rate=%.0f (continuous)\n",
                     channel_id, output_rate);
-            if (jc->oqpsk)
+            if (jc->oqpsk_cont)
                 chan_init_thread(jc);
         }
-        if (!jc || !jc->oqpsk) return;
+        if (!jc || !jc->oqpsk_cont) return;
 
         chan_push(jc, samples, num_samples);
         return;
