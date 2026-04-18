@@ -201,6 +201,23 @@ inmarsat-sniffer --update-db
 inmarsat-sniffer -i sdrplay --satellite=4F3 --basestation=30003
 ```
 
+### IQ recording for development
+
+If you have good satellite reception and want to contribute a test recording:
+
+```bash
+# RTL-SDR, Inmarsat 4F3 (Americas), with bias tee LNA
+./tools/capture_iq.sh --sdr=rtl --satellite=4F3 --bias-tee
+
+# SDRplay, Inmarsat 4F3, 6 MHz capture (covers MSK + OQPSK)
+./tools/capture_iq.sh --sdr=sdrplay --satellite=4F3
+
+# Playback
+inmarsat-sniffer -f capture_4F3_rtl_20260418.cu8 --format=cu8 --satellite=4F3
+```
+
+Recordings are capped at 500 MB (~1-2 minutes depending on sample rate). RTL-SDR saves as `.cu8` (unsigned 8-bit IQ), SDRplay saves as `.cs16` (signed 16-bit IQ).
+
 ### Mode selection
 
 ```bash
