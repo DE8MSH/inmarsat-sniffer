@@ -103,6 +103,9 @@ typedef struct {
     int cleanup_idx;
     int has_cleanup;
 
+    /* Per-channel digital gain (applied after cleanup filter) */
+    float gain;
+
     /* Output buffer */
     float complex *out_buf;
     int out_len;
@@ -254,6 +257,20 @@ static int largest_factor_leq(int n, int limit) {
     }
     if (n <= limit && n > best) best = n;
     return best;
+}
+
+/* Per-channel digital gain matching SDRReceiver defaults.
+ * MSK/BPSK channels get higher gain; OQPSK channels are already
+ * stronger (wider bandwidth concentrates more energy). */
+static float channel_gain(channel_type_t type) {
+    switch (type) {
+    case CHAN_STDC_EGC:   return 5.0f;
+    case CHAN_AERO_600:   return 5.0f;
+    case CHAN_AERO_1200:  return 5.0f;
+    case CHAN_AERO_10500: return 3.0f;
+    case CHAN_AERO_8400:  return 3.0f;
+    default: return 1.0f;
+    }
 }
 
 static double signal_bandwidth(channel_type_t type) {
@@ -464,6 +481,8 @@ int channelizer_add_channel(channelizer_t *ch, double freq,
         c->has_cleanup = 0;
     }
 
+    c->gain = channel_gain(type);
+
     /* Output buffer */
     c->out_cap = (int)(stage_rate * 0.1) + 512;
     c->out_buf = malloc(c->out_cap * sizeof(float complex));
@@ -567,9 +586,9 @@ void channelizer_process(channelizer_t *ch, const float *samples,
                     x = out;
                 }
 
-                /* Accumulate output */
+                /* Apply per-channel gain and accumulate */
                 if (cs->out_len < cs->out_cap)
-                    cs->out_buf[cs->out_len++] = x;
+                    cs->out_buf[cs->out_len++] = x * cs->gain;
             }
         }
 

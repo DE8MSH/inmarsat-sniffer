@@ -80,14 +80,20 @@ extern char *basestation_endpoint;
 extern char *aircraft_db_path;
 extern int update_db_flag;
 extern char *station_id;
+#ifdef HAVE_HACKRF
 extern char *hackrf_serial;
 extern int hackrf_lna_gain;
 extern int hackrf_vga_gain;
 extern int hackrf_amp_enable;
+#endif
+#ifdef HAVE_BLADERF
 extern int bladerf_num;
 extern int bladerf_gain_val;
+#endif
+#ifdef HAVE_UHD
 extern char *usrp_serial;
 extern int usrp_gain_val;
+#endif
 extern int mqtt_enabled;
 extern char *mqtt_host;
 extern int mqtt_port;
@@ -249,11 +255,17 @@ void parse_options(int argc, char **argv) {
         { "aircraft-db",        required_argument, NULL, OPT_AIRCRAFT_DB },
         { "update-db",          no_argument,       NULL, OPT_UPDATE_DB },
         { "station-id",         required_argument, NULL, OPT_STATION_ID },
+#ifdef HAVE_HACKRF
         { "hackrf-lna",         required_argument, NULL, OPT_HACKRF_LNA },
         { "hackrf-vga",         required_argument, NULL, OPT_HACKRF_VGA },
         { "hackrf-amp",         no_argument,       NULL, OPT_HACKRF_AMP },
+#endif
+#ifdef HAVE_BLADERF
         { "bladerf-gain",       required_argument, NULL, OPT_BLADERF_GAIN },
+#endif
+#ifdef HAVE_UHD
         { "usrp-gain",          required_argument, NULL, OPT_USRP_GAIN },
+#endif
         { "mqtt",               required_argument, NULL, OPT_MQTT },
         { "mqtt-user",          required_argument, NULL, OPT_MQTT_USER },
         { "mqtt-pass",          required_argument, NULL, OPT_MQTT_PASS },
@@ -430,6 +442,7 @@ void parse_options(int argc, char **argv) {
             station_id = strdup(optarg);
             break;
 
+#ifdef HAVE_HACKRF
         case OPT_HACKRF_LNA:
             hackrf_lna_gain = atoi(optarg);
             break;
@@ -441,14 +454,19 @@ void parse_options(int argc, char **argv) {
         case OPT_HACKRF_AMP:
             hackrf_amp_enable = 1;
             break;
+#endif
 
+#ifdef HAVE_BLADERF
         case OPT_BLADERF_GAIN:
             bladerf_gain_val = atoi(optarg);
             break;
+#endif
 
+#ifdef HAVE_UHD
         case OPT_USRP_GAIN:
             usrp_gain_val = atoi(optarg);
             break;
+#endif
 
         case OPT_MQTT: {
 #ifdef HAVE_MQTT

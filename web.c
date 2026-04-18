@@ -29,7 +29,7 @@ extern volatile sig_atomic_t running;
 /* ---- Ring buffer storage ---- */
 
 #define MAX_STDC_MSGS   200
-#define MAX_AIRCRAFT    512
+#define MAX_AIRCRAFT    256
 #define MAX_FIXES       8
 
 typedef struct {
@@ -192,7 +192,7 @@ static int json_escape_str(char *out, int maxlen, const char *in, int inlen) {
     return pos;
 }
 
-#define JSON_BUF_SIZE 131072
+#define JSON_BUF_SIZE 524288  /* 512 KB — room for 512 aircraft + 200 STD-C */
 
 static int build_json(char *buf, int maxlen) {
     pthread_mutex_lock(&state.lock);
@@ -229,11 +229,13 @@ static int build_json(char *buf, int maxlen) {
     }
     pos += snprintf(buf + pos, maxlen - pos, "],");
 
-    /* Aircraft */
+    /* Aircraft — only send entries seen in the last 10 minutes */
+    double cutoff = now_unix() - 600.0;
     pos += snprintf(buf + pos, maxlen - pos, "\"aircraft\":[");
     first = 1;
     for (int i = 0; i < state.num_aircraft && pos < maxlen - 2048; i++) {
         aircraft_entry_t *ac = &state.aircraft[i];
+        if (ac->last_seen < cutoff) continue;
         if (!first) buf[pos++] = ',';
         first = 0;
 
@@ -269,6 +271,7 @@ static int build_json(char *buf, int maxlen) {
             unsigned long burst_count;
             double last_msg_time;
             unsigned long drops;
+            double mse;
         } chan_web_info_t;
 
         /* Gather channel info without holding main's lock */
@@ -283,9 +286,9 @@ static int build_json(char *buf, int maxlen) {
             double age = now_unix() - chinfo[i].last_msg_time;
             if (chinfo[i].last_msg_time < 1) age = -1;
             pos += snprintf(buf + pos, maxlen - pos,
-                "{\"ch\":%d,\"baud\":%d,\"msgs\":%lu,\"age\":%.0f}",
+                "{\"ch\":%d,\"baud\":%d,\"msgs\":%lu,\"age\":%.0f,\"mse\":%.3f}",
                 chinfo[i].channel_id, chinfo[i].baud_rate,
-                chinfo[i].msg_count, age);
+                chinfo[i].msg_count, age, chinfo[i].mse);
         }
         pos += snprintf(buf + pos, maxlen - pos, "]");
     }
@@ -388,6 +391,7 @@ static const char HTML_PAGE[] =
 ""
 "var ac_markers={};"
 "var allAcars=[];"
+"var acarsKeys={};"
 "function exportAircraft(){"
 "  if(allAcars.length===0){alert('No ACARS messages collected yet.');return;}"
 "  var csv='timestamp,reg,flight,label,channel,lat,lon,text\\n';"
@@ -431,22 +435,29 @@ static const char HTML_PAGE[] =
 "    var dot=active?'\\u25CF':'\\u25CB';"
 "    var color=active?'#38bdf8':'#475569';"
 "    var msgs=c.msgs>0?fmtN(c.msgs):'\\u2014';"
-"    html+='<div style=\"color:'+color+';display:flex;gap:6px;padding:1px 0\">'"
+"    var sq=Math.max(0,Math.min(100,Math.round((1.0-c.mse)*100)));"
+"    var sqc=sq>60?'#22c55e':sq>30?'#eab308':'#ef4444';"
+"    html+='<div style=\"color:'+color+';display:flex;gap:6px;padding:1px 0;align-items:center\">'"
 "      +'<span>'+dot+'</span>'"
 "      +'<span style=\"min-width:32px\">ch'+c.ch+'</span>'"
 "      +'<span style=\"min-width:78px\">'+baud+'</span>'"
 "      +'<span style=\"min-width:38px;text-align:right\">'+msgs+'</span>'"
+"      +'<span style=\"min-width:50px\"><span style=\"display:inline-block;width:'+sq+'%;max-width:40px;height:6px;background:'+sqc+';border-radius:2px\"></span></span>'"
 "      +'</div>';"
 "  });"
 "  document.getElementById('n-ac').textContent=locked+'/'+d.channels.length;"
 "  cp.innerHTML=html;"
 "}"
 "if(d.aircraft){d.aircraft.forEach(function(a){"
-"  var isDup=allAcars.some(function(e){return e.reg===a.reg&&e.t===a.last_seen});"
-"  if(!isDup)allAcars.push({t:a.last_seen,reg:a.reg,flight:a.flight,"
-"    label:a.label,ch:a.ch,text:a.text,"
-"    lat:a.fixes&&a.fixes.length?a.fixes[a.fixes.length-1][0]:null,"
-"    lon:a.fixes&&a.fixes.length?a.fixes[a.fixes.length-1][1]:null});"
+"  var key=a.reg+'|'+a.last_seen.toFixed(1);"
+"  if(!acarsKeys[key]){"
+"    acarsKeys[key]=1;"
+"    allAcars.push({t:a.last_seen,reg:a.reg,flight:a.flight,"
+"      label:a.label,ch:a.ch,text:a.text,"
+"      lat:a.fixes&&a.fixes.length?a.fixes[a.fixes.length-1][0]:null,"
+"      lon:a.fixes&&a.fixes.length?a.fixes[a.fixes.length-1][1]:null});"
+"    if(allAcars.length>5000){allAcars=allAcars.slice(-2500);acarsKeys={};allAcars.forEach(function(e){acarsKeys[e.reg+'|'+e.t.toFixed(1)]=1;});}"
+"  }"
 "})}"
 ""
 "/* STD-C messages */"
@@ -492,24 +503,20 @@ static const char HTML_PAGE[] =
 ".addTo(ac_layer);}"
 "ac_markers[ac.reg].bindPopup('<b>'+ac.reg+'</b><br>'"
 "+ac.flight+'<br>Alt: '+last[2]+' ft<br>'+ac.text.substring(0,80));"
-""
-"/* Trail */"
-"if(ac.fixes.length>1){"
-"var pts=ac.fixes.map(function(f){return[f[0],f[1]]});"
-"L.polyline(pts,{color:'#38bdf8',weight:1,opacity:0.6,"
-"dashArray:'4 4'}).addTo(trail_layer);}"
 "}}"
 ""
 "/* Remove stale markers */"
 "for(var r in ac_markers){"
 "if(!seen[r]){ac_layer.removeLayer(ac_markers[r]);"
 "delete ac_markers[r];}}"
+""
+"/* Rebuild trails (clear first to avoid layer accumulation) */"
 "trail_layer.clearLayers();"
 "for(var i=0;i<d.aircraft.length;i++){"
 "var ac=d.aircraft[i];"
 "if(ac.fixes.length>1){"
 "var pts=ac.fixes.map(function(f){return[f[0],f[1]]});"
-"L.polyline(pts,{color:'#ff0',weight:1,opacity:0.5,"
+"L.polyline(pts,{color:'#38bdf8',weight:1,opacity:0.5,"
 "dashArray:'4 4'}).addTo(trail_layer);}}"
 "}"
 ""

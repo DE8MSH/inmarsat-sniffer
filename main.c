@@ -70,6 +70,7 @@ typedef struct {
     atomic_ulong msg_count;
     atomic_ulong burst_count;
     double last_msg_time;
+
 } jaero_chan_t;
 
 static jaero_chan_t jaero_chans[MAX_JAERO_DEMODS];
@@ -83,6 +84,7 @@ typedef struct {
     unsigned long burst_count;
     double last_msg_time;
     unsigned long drops;
+    double mse;  /* signal quality: lower = better, 0-1 range */
 } chan_web_info_t;
 
 void web_get_channel_info(chan_web_info_t *out, int *n) {
@@ -95,6 +97,13 @@ void web_get_channel_info(chan_web_info_t *out, int *n) {
         out[i].burst_count = atomic_load(&jaero_chans[i].burst_count);
         out[i].last_msg_time = jaero_chans[i].last_msg_time;
         out[i].drops = atomic_load(&jaero_chans[i].drops);
+        /* Read MSE from whichever demod is active on this channel */
+        double mse = 1.0;
+        if (jaero_chans[i].pmsk)
+            mse = jaero_pmsk_get_mse(jaero_chans[i].pmsk);
+        else if (jaero_chans[i].oqpsk_cont)
+            mse = jaero_oqpsk_cont_get_mse(jaero_chans[i].oqpsk_cont);
+        out[i].mse = mse;
     }
     *n = count;
 }
@@ -497,11 +506,20 @@ static void print_status(void) {
 
     float stdc_ber = sb_cnt ? (float)sb_sum / (sb_cnt * 10000.0f) : 0;
 
+    /* Format large counters with K/M suffixes */
+    char burst_str[16];
+    if (bursts >= 1000000)
+        snprintf(burst_str, sizeof(burst_str), "%.1fM", bursts / 1e6);
+    else if (bursts >= 1000)
+        snprintf(burst_str, sizeof(burst_str), "%.1fK", bursts / 1e3);
+    else
+        snprintf(burst_str, sizeof(burst_str), "%lu", bursts);
+
     fprintf(stderr, "\r[STD-C: %lu %s BER:%.2f CRC:%lu/%lu | "
-            "Aero: %lu bursts %lu msgs CRC:%lu | drop:%lu]   ",
+            "Aero: %s bursts %lu msgs CRC:%lu | drop:%lu]   ",
             stdc, synced ? "SYNC" : "SRCH",
             stdc_ber, sc_ok, sc_ok + sc_fail,
-            bursts, msgs, ac_ok, drops);
+            burst_str, msgs, ac_ok, drops);
 }
 
 /* ---- STD-C demod/decode chain ---- */
@@ -830,29 +848,45 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         return;
     }
 
-    /* Auto-calibrate: measure carrier offset from first aero channel,
+    /* Auto-calibrate: measure carrier offset from an aero channel,
      * then adjust channelizer center freq to compensate SDR PPM error.
-     * Runs once during first ~1 second of data. */
+     * Runs at startup, then re-checks every 60 seconds to track drift. */
     {
-        static float complex *cal_buf = NULL;
+        static float complex cal_buf[1024];
         static int cal_n = 0;
         static int cal_ch = -1;
-        static int cal_done = 0;
-        #define CAL_SIZE 256
+        static double cal_next_time = 0;
+        #define CAL_SIZE 1024
+        #define CAL_INTERVAL 60.0  /* seconds between recalibrations */
 
-        if (!cal_done && !cal_buf && (type == CHAN_AERO_600 || type == CHAN_AERO_1200)) {
-            cal_buf = malloc(CAL_SIZE * sizeof(float complex));
-            cal_ch = channel_id;
-            cal_n = 0;
+        double now = 0;
+        if (cal_ch < 0 || cal_next_time == 0) {
+            struct timespec ts;
+            clock_gettime(CLOCK_MONOTONIC, &ts);
+            now = ts.tv_sec + ts.tv_nsec / 1e9;
+            if (cal_next_time == 0) cal_next_time = now;
         }
-        if (cal_buf && !cal_done && channel_id == cal_ch) {
+
+        /* Start a new calibration cycle on an MSK channel */
+        if (cal_ch < 0 && (type == CHAN_AERO_600 || type == CHAN_AERO_1200)) {
+            if (now == 0) {
+                struct timespec ts;
+                clock_gettime(CLOCK_MONOTONIC, &ts);
+                now = ts.tv_sec + ts.tv_nsec / 1e9;
+            }
+            if (now >= cal_next_time) {
+                cal_ch = channel_id;
+                cal_n = 0;
+            }
+        }
+        if (cal_ch >= 0 && channel_id == cal_ch) {
             int need = CAL_SIZE - cal_n;
             int take = num_samples < need ? num_samples : need;
             memcpy(&cal_buf[cal_n], samples, take * sizeof(float complex));
             cal_n += take;
 
             if (cal_n >= CAL_SIZE) {
-                /* Simple peak-finding via magnitude-squared of DFT at each bin */
+                /* Peak-finding via magnitude-squared DFT */
                 double max_pwr = 0;
                 int max_bin = 0;
                 for (int k = 0; k < CAL_SIZE; k++) {
@@ -865,7 +899,6 @@ static void channel_output_cb(int channel_id, channel_type_t type,
                     double pwr = re * re + im * im;
                     if (pwr > max_pwr) { max_pwr = pwr; max_bin = k; }
                 }
-                /* Convert bin to Hz offset (centered FFT) */
                 double output_rate = channelizer_output_rate(channelizer, cal_ch);
                 int half = CAL_SIZE / 2;
                 int offset_bin = max_bin > half ? max_bin - CAL_SIZE : max_bin;
@@ -875,13 +908,11 @@ static void channel_output_cb(int channel_id, channel_type_t type,
                     fprintf(stderr, "Auto-cal: carrier offset %.0f Hz on ch%d, adjusting center freq\n",
                             offset_hz, cal_ch);
                     channelizer_adjust_center(channelizer, offset_hz);
-                } else {
-                    fprintf(stderr, "Auto-cal: carrier centered (%.0f Hz offset), no adjustment needed\n",
-                            offset_hz);
                 }
-                free(cal_buf);
-                cal_buf = NULL;
-                cal_done = 1;
+                cal_ch = -1;
+                struct timespec ts;
+                clock_gettime(CLOCK_MONOTONIC, &ts);
+                cal_next_time = ts.tv_sec + ts.tv_nsec / 1e9 + CAL_INTERVAL;
             }
         }
     }

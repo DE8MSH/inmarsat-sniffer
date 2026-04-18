@@ -60,6 +60,8 @@ public:
     /* Callback registration. */
     void setSoftBitsCallback(oqpsk_soft_bits_cb cb, void *user);
 
+    double getMSE() const { return mse; }
+
 private:
     oqpsk_soft_bits_cb soft_bits_cb;
     void *soft_bits_user;
