@@ -1375,9 +1375,9 @@ int main(int argc, char **argv) {
         }
 
         if (channelizer) {
-            /* Debug: print signal power every 500 buffers */
+            /* Debug: print signal power every 500 buffers (verbose only) */
             static int dbg_cnt = 0;
-            if (++dbg_cnt == 500) {
+            if (verbose && ++dbg_cnt == 500) {
                 dbg_cnt = 0;
                 double pwr = 0;
                 if (buf->format == SAMPLE_FMT_FLOAT) {

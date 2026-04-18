@@ -23,9 +23,14 @@ Sister project to [iridium-sniffer](https://github.com/alphafox02/iridium-sniffe
 - SBS/BaseStation output (`--basestation`) for tar1090, VRS, PlanePlotter
 - MQTT output (`--mqtt`) with configurable host, user/pass, topic
 - JSON feed with station-id (`--feed`, `--udp`, `--station-id`)
-- Built-in web dashboard with dark theme, aircraft markers, trail history, CSV export
+- JAERO text format 3 output (`--jaero-format`) for legacy script compatibility
+- AES/GES identifiers from ISU layer in all outputs
+- Built-in web dashboard with dark theme, aircraft markers, signal quality bars, trail history, CSV export
+- Two-stage channelizer with per-channel digital gain (MSK=5x, OQPSK=3x)
+- Periodic auto-calibration for SDR crystal drift (every 60s)
 - Aircraft database (568k entries from tar1090-db) for registration-to-ICAO-hex lookup
 - AVX2, SSE4.2, and NEON SIMD kernels with automatic runtime detection
+- RTL-SDR AGC mode (`--agc`) for weak signal setups
 - ZMQ audio output (`-z`) for JAERO-compatible per-channel streaming
 - VITA 49 (VRT) UDP input for remote/distributed SDR setups
 - HackRF, BladeRF, USRP, RTL-SDR, SDRplay, and SoapySDR native backends
