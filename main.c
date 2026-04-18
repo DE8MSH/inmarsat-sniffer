@@ -845,7 +845,7 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         static int cal_n = 0;
         static int cal_ch = -1;
         static int cal_done = 0;
-        #define CAL_SIZE 4096
+        #define CAL_SIZE 256
 
         if (!cal_done && !cal_buf && (type == CHAN_AERO_600 || type == CHAN_AERO_1200)) {
             cal_buf = malloc(CAL_SIZE * sizeof(float complex));

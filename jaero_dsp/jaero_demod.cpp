@@ -316,7 +316,7 @@ jaero_pmsk_demod_t *jaero_pmsk_create(double sample_rate, double symbol_rate,
      * (same formula as our ZMQ out → real JAERO, known to decode).
      * Demod's mixer_center brings audio back to baseband. */
     s.freq_center = 1000.0;
-    s.lockingbw = 5000.0;  /* wide enough for RTL-SDR ±2 PPM (~3 kHz) */
+    s.lockingbw = 900.0;
     s.coarsefreqest_fft_power = 13;
     s.symbolspercycle = (symbol_rate <= 600) ? 8 : 16;
     s.signalthreshold = 0.5;
@@ -429,7 +429,7 @@ jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double sym
     s.freq_center              = 8000.0;
     s.lockingbw                = 10500.0;
     s.coarsefreqest_fft_power  = 14;
-    s.signalthreshold          = 0.65;
+    s.signalthreshold          = 0.3;  /* lowered for weak L-band forward link */
 
     d->demod->setSettings(s);
     d->demod->setSoftBitsCallback(oqpsk_cont_bits_adapter, d);
