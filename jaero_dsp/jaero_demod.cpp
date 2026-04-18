@@ -316,7 +316,7 @@ jaero_pmsk_demod_t *jaero_pmsk_create(double sample_rate, double symbol_rate,
      * (same formula as our ZMQ out → real JAERO, known to decode).
      * Demod's mixer_center brings audio back to baseband. */
     s.freq_center = 1000.0;
-    s.lockingbw = 900.0;
+    s.lockingbw = (symbol_rate <= 600) ? 900.0 : 1800.0;  /* JAERO: 900 for 600, 1800 for 1200 */
     s.coarsefreqest_fft_power = 13;
     s.symbolspercycle = (symbol_rate <= 600) ? 8 : 16;
     s.signalthreshold = 0.5;
