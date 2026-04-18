@@ -88,16 +88,22 @@ void *rtlsdr_backend_setup(int dev_index) {
     fprintf(stderr, "RTL-SDR: tuned to %.3f MHz @ %.3f Msps\n",
             center_freq / 1e6, samp_rate / 1e6);
 
-    /* Gain: manual mode, set from --soapy-gain value (reused) */
+    /* Gain: manual mode, disable RTL2832U internal AGC (matches SDRReceiver) */
     rtlsdr_set_tuner_gain_mode(dev, 1);
+    rtlsdr_set_agc_mode(dev, 0);
 
-    /* Find nearest supported gain value */
+    /* Find nearest supported gain value.
+     * Default to max gain (496 = 49.6 dB) for weak satellite signals,
+     * matching SDRReceiver's default. Override with --soapy-gain. */
     int num_gains = rtlsdr_get_tuner_gains(dev, NULL);
     if (num_gains > 0) {
         int *gains = malloc((size_t)num_gains * sizeof(int));
         rtlsdr_get_tuner_gains(dev, gains);
 
-        int target = (int)(soapy_gain_val * 10.0);  /* tenths of dB */
+        /* Use max gain if user didn't specify */
+        double gain_target = soapy_gain_val;
+        if (gain_target <= 40.0) gain_target = 49.6;  /* max for R820T/R828D */
+        int target = (int)(gain_target * 10.0);  /* tenths of dB */
         int best = gains[0];
         int best_diff = abs(target - gains[0]);
         for (int i = 1; i < num_gains; i++) {
@@ -134,17 +140,34 @@ static void rtlsdr_async_cb(unsigned char *buf, uint32_t len, void *ctx) {
         return;
 
     /* RTL-SDR gives unsigned 8-bit IQ pairs (center at 128).
-     * Convert to signed int8 by subtracting 128 (XOR 0x80). */
-    sample_buf_t *s = malloc(sizeof(*s) + len);
+     * Convert to float and apply DC bias correction (matching
+     * SDRReceiver's correct_dc_bias=1). Without DC removal, the
+     * strong DC spike in RTL-SDR data can prevent demod lock. */
+    uint32_t num_samples = len / 2;
+    sample_buf_t *s = malloc(sizeof(*s) + num_samples * sizeof(float) * 2);
     if (!s)
         return;
 
-    s->format = SAMPLE_FMT_INT8;
-    s->num = len / 2;  /* IQ pairs */
+    s->format = SAMPLE_FMT_FLOAT;
+    s->num = num_samples;
     s->hw_timestamp_ns = 0;
 
-    for (uint32_t i = 0; i < len; i++)
-        s->samples[i] = (int8_t)(buf[i] - 128);
+    /* DC blocker: y[n] = x[n] - x[n-1] + alpha*y[n-1] */
+    static float dc_re = 0, dc_im = 0;
+    static float prev_re = 0, prev_im = 0;
+    const float alpha = 0.998f;
+
+    float *out = (float *)s->samples;
+    for (uint32_t i = 0; i < num_samples; i++) {
+        float re = ((int)buf[i * 2] - 128) * (1.0f / 128.0f);
+        float im = ((int)buf[i * 2 + 1] - 128) * (1.0f / 128.0f);
+        dc_re = re - prev_re + alpha * dc_re;
+        dc_im = im - prev_im + alpha * dc_im;
+        prev_re = re;
+        prev_im = im;
+        out[i * 2] = dc_re;
+        out[i * 2 + 1] = dc_im;
+    }
 
     push_samples(s);
 }
@@ -154,8 +177,9 @@ static void rtlsdr_async_cb(unsigned char *buf, uint32_t len, void *ctx) {
 void *rtlsdr_stream_thread(void *arg) {
     rtlsdr_dev_t *dev = (rtlsdr_dev_t *)arg;
 
-    /* rtlsdr_read_async blocks until rtlsdr_cancel_async is called */
-    rtlsdr_read_async(dev, rtlsdr_async_cb, NULL, 0, 0);
+    /* Use smaller buffers (16384 bytes = 8192 samples ~3.4ms at 2.4MHz)
+     * to avoid bursty processing from the default 256KB buffers. */
+    rtlsdr_read_async(dev, rtlsdr_async_cb, NULL, 15, 16384);
 
     running = 0;
     return NULL;

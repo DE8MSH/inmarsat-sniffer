@@ -46,9 +46,10 @@ int zmq_base_port = 6001;
 #define CHAN_RING_SIZE (1 << 18)  /* 262144 complex samples (~5.4s @ 48kHz) */
 
 typedef struct {
-    jaero_pmsk_demod_t *pmsk;   /* continuous MSK demod for P-channel 600/1200 */
-    jaero_msk_demod_t  *burstmsk; /* burst MSK demod for R/T channels (unused for now) */
-    jaero_oqpsk_demod_t *oqpsk;   /* OQPSK for 8400/10500 */
+    jaero_pmsk_demod_t       *pmsk;      /* continuous MSK demod for P-channel 600/1200 */
+    jaero_msk_demod_t        *burstmsk;  /* burst MSK demod for R/T channels (unused for now) */
+    jaero_oqpsk_demod_t      *oqpsk;     /* burst OQPSK for 8400 baud */
+    jaero_oqpsk_cont_demod_t *oqpsk_cont; /* continuous OQPSK for 10500 baud forward link */
     int channel_id;
     int baud_rate;
     int channel_type;          /* CHAN_AERO_* */
@@ -137,7 +138,24 @@ static void *chan_worker_fn(void *arg)
                 iq_dbl[i*2+1] = cimagf(batch[i]);
             }
             jaero_pmsk_feed_iq(jc->pmsk, iq_dbl, take);
+        } else if (jc->oqpsk_cont) {
+            /* Continuous OQPSK (10500 baud): mix IQ → audio at AUDIO_CENTER_HZ,
+             * then feed OqpskDemodulator's audio path (identical to JAERO GUI). */
+            int16_t pcm[BATCH];
+            for (unsigned i = 0; i < take; i++) {
+                double ca = cos(jc->mixer_phase);
+                double sa = sin(jc->mixer_phase);
+                double audio = creal((double complex)batch[i] * (ca + sa * I));
+                jc->mixer_phase += jc->mixer_inc;
+                if (jc->mixer_phase > 2.0 * M_PI) jc->mixer_phase -= 2.0 * M_PI;
+                double scaled = audio * AUDIO_GAIN * 32768.0;
+                if (scaled > 32767.0) scaled = 32767.0;
+                if (scaled < -32768.0) scaled = -32768.0;
+                pcm[i] = (int16_t)scaled;
+            }
+            jaero_oqpsk_cont_feed_audio(jc->oqpsk_cont, pcm, take);
         } else if (jc->oqpsk) {
+            /* Burst OQPSK (8400 baud): same audio conversion path. */
             int16_t pcm[BATCH];
             for (unsigned i = 0; i < take; i++) {
                 double ca = cos(jc->mixer_phase);
@@ -819,6 +837,62 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         return;
     }
 
+    /* Auto-calibrate: measure carrier offset from first aero channel,
+     * then adjust channelizer center freq to compensate SDR PPM error.
+     * Runs once during first ~1 second of data. */
+    {
+        static float complex *cal_buf = NULL;
+        static int cal_n = 0;
+        static int cal_ch = -1;
+        static int cal_done = 0;
+        #define CAL_SIZE 4096
+
+        if (!cal_done && !cal_buf && (type == CHAN_AERO_600 || type == CHAN_AERO_1200)) {
+            cal_buf = malloc(CAL_SIZE * sizeof(float complex));
+            cal_ch = channel_id;
+            cal_n = 0;
+        }
+        if (cal_buf && !cal_done && channel_id == cal_ch) {
+            int need = CAL_SIZE - cal_n;
+            int take = num_samples < need ? num_samples : need;
+            memcpy(&cal_buf[cal_n], samples, take * sizeof(float complex));
+            cal_n += take;
+
+            if (cal_n >= CAL_SIZE) {
+                /* Simple peak-finding via magnitude-squared of DFT at each bin */
+                double max_pwr = 0;
+                int max_bin = 0;
+                for (int k = 0; k < CAL_SIZE; k++) {
+                    double re = 0, im = 0;
+                    for (int n = 0; n < CAL_SIZE; n++) {
+                        double angle = -2.0 * M_PI * k * n / CAL_SIZE;
+                        re += crealf(cal_buf[n]) * cos(angle) - cimagf(cal_buf[n]) * sin(angle);
+                        im += crealf(cal_buf[n]) * sin(angle) + cimagf(cal_buf[n]) * cos(angle);
+                    }
+                    double pwr = re * re + im * im;
+                    if (pwr > max_pwr) { max_pwr = pwr; max_bin = k; }
+                }
+                /* Convert bin to Hz offset (centered FFT) */
+                double output_rate = channelizer_output_rate(channelizer, cal_ch);
+                int half = CAL_SIZE / 2;
+                int offset_bin = max_bin > half ? max_bin - CAL_SIZE : max_bin;
+                double offset_hz = offset_bin * output_rate / CAL_SIZE;
+
+                if (fabs(offset_hz) > 50.0) {
+                    fprintf(stderr, "Auto-cal: carrier offset %.0f Hz on ch%d, adjusting center freq\n",
+                            offset_hz, cal_ch);
+                    channelizer_adjust_center(channelizer, offset_hz);
+                } else {
+                    fprintf(stderr, "Auto-cal: carrier centered (%.0f Hz offset), no adjustment needed\n",
+                            offset_hz);
+                }
+                free(cal_buf);
+                cal_buf = NULL;
+                cal_done = 1;
+            }
+        }
+    }
+
     /* Aero MSK channels: use JAERO's BurstMskDemodulator + AeroL in P-channel
      * continuous mode. Feed complex IQ directly via feedIQ (no audio
      * round-trip conversion). */
@@ -837,12 +911,13 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         }
         if (!jc && num_jaero_chans < MAX_JAERO_DEMODS) {
             jc = &jaero_chans[num_jaero_chans++];
-            jc->channel_id = channel_id;
-            jc->baud_rate = baud;
-            jc->pmsk = NULL;
-            jc->burstmsk = NULL;
-            jc->oqpsk = NULL;
-            jc->mixer_phase = 0;
+            jc->channel_id  = channel_id;
+            jc->baud_rate   = baud;
+            jc->pmsk        = NULL;
+            jc->burstmsk    = NULL;
+            jc->oqpsk       = NULL;
+            jc->oqpsk_cont  = NULL;
+            jc->mixer_phase = 0.0;
             /* Mix IQ to audio at 1000 Hz — the JAERO desktop default for
              * 600/1200 baud MSK. Matches SDRReceiver/ZMQ convention. */
             jc->mixer_inc = 2.0 * M_PI * PMSK_AUDIO_HZ / output_rate;
@@ -866,10 +941,9 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         return;
     }
 
-    /* Aero OQPSK channels (8400/10500 baud): still use JAERO demod for now */
-    if (type == CHAN_AERO_8400 || type == CHAN_AERO_10500) {
-
-        int baud = (type == CHAN_AERO_10500) ? 10500 : 8400;
+    /* Aero 10500 baud: continuous OQPSK forward link (Aero H/H+/L).
+     * Uses OqpskDemodulator (continuous, AeroL burstmode=false). */
+    if (type == CHAN_AERO_10500) {
         double output_rate = channelizer_output_rate(channelizer, channel_id);
         if (output_rate <= 0) return;
 
@@ -882,25 +956,66 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         }
         if (!jc && num_jaero_chans < MAX_JAERO_DEMODS) {
             jc = &jaero_chans[num_jaero_chans++];
-            jc->channel_id = channel_id;
-            jc->baud_rate = baud;
-            jc->pmsk = NULL;
-            jc->burstmsk = NULL;
-            jc->mixer_phase = 0;
-            jc->mixer_inc = 2.0 * M_PI * AUDIO_CENTER_HZ / output_rate;
-            jc->oqpsk = jaero_oqpsk_create(output_rate, (double)baud,
+            jc->channel_id  = channel_id;
+            jc->baud_rate   = 10500;
+            jc->pmsk        = NULL;
+            jc->burstmsk    = NULL;
+            jc->oqpsk       = NULL;
+            jc->oqpsk_cont  = NULL;
+            jc->mixer_phase = 0.0;
+            jc->mixer_inc   = 2.0 * M_PI * AUDIO_CENTER_HZ / output_rate;
+
+            jc->oqpsk_cont = jaero_oqpsk_cont_create(output_rate, 10500.0,
+                                                       channel_id, jaero_bits_cb, NULL);
+            if (jc->oqpsk_cont)
+                jaero_oqpsk_cont_set_acars_callback(jc->oqpsk_cont,
+                                                     jaero_acars_data_cb, NULL);
+            fprintf(stderr, "[OQPSK-CONT ch%d] baud=10500 rate=%.0f (continuous)\n",
+                    channel_id, output_rate);
+            if (jc->oqpsk_cont)
+                chan_init_thread(jc);
+        }
+        if (!jc || !jc->oqpsk_cont) return;
+
+        chan_push(jc, samples, num_samples);
+        return;
+    }
+
+    /* Aero 8400 baud: burst OQPSK (C-channel voice/data).
+     * Keeps BurstOqpskDemodulator unchanged. */
+    if (type == CHAN_AERO_8400) {
+        double output_rate = channelizer_output_rate(channelizer, channel_id);
+        if (output_rate <= 0) return;
+
+        jaero_chan_t *jc = NULL;
+        for (int i = 0; i < num_jaero_chans; i++) {
+            if (jaero_chans[i].channel_id == channel_id) {
+                jc = &jaero_chans[i];
+                break;
+            }
+        }
+        if (!jc && num_jaero_chans < MAX_JAERO_DEMODS) {
+            jc = &jaero_chans[num_jaero_chans++];
+            jc->channel_id  = channel_id;
+            jc->baud_rate   = 8400;
+            jc->pmsk        = NULL;
+            jc->burstmsk    = NULL;
+            jc->oqpsk_cont  = NULL;
+            jc->mixer_phase = 0.0;
+            jc->mixer_inc   = 2.0 * M_PI * AUDIO_CENTER_HZ / output_rate;
+
+            jc->oqpsk = jaero_oqpsk_create(output_rate, 8400.0,
                                              channel_id, jaero_bits_cb, NULL);
             if (jc->oqpsk)
                 jaero_oqpsk_set_acars_callback(jc->oqpsk,
                                                 jaero_acars_data_cb, NULL);
-            fprintf(stderr, "[OQPSK-INIT] ch%d baud=%d rate=%.0f\n",
-                    channel_id, baud, output_rate);
+            fprintf(stderr, "[OQPSK-BURST ch%d] baud=8400 rate=%.0f (burst)\n",
+                    channel_id, output_rate);
             if (jc->oqpsk)
                 chan_init_thread(jc);
         }
         if (!jc || !jc->oqpsk) return;
 
-        /* Push into per-channel ring — worker thread converts to audio and feeds demod. */
         chan_push(jc, samples, num_samples);
         return;
     }
@@ -1219,6 +1334,30 @@ int main(int argc, char **argv) {
         }
 
         if (channelizer) {
+            /* Debug: print signal power every 500 buffers */
+            static int dbg_cnt = 0;
+            if (++dbg_cnt == 500) {
+                dbg_cnt = 0;
+                double pwr = 0;
+                if (buf->format == SAMPLE_FMT_FLOAT) {
+                    float *f = (float *)buf->samples;
+                    for (int i = 0; i < 100 && i < (int)buf->num * 2; i++)
+                        pwr += f[i] * f[i];
+                } else {
+                    for (int i = 0; i < 100 && i < (int)buf->num * 2; i++)
+                        pwr += buf->samples[i] * buf->samples[i];
+                }
+                fprintf(stderr, "\n[DBG] fmt=%d num=%u pwr=%.6f samples: ",
+                        buf->format, buf->num, pwr);
+                if (buf->format == SAMPLE_FMT_FLOAT) {
+                    float *f = (float *)buf->samples;
+                    for (int i = 0; i < 10; i++) fprintf(stderr, "%.4f ", f[i]);
+                } else {
+                    for (int i = 0; i < 10; i++) fprintf(stderr, "%d ", buf->samples[i]);
+                }
+                fprintf(stderr, "\n");
+            }
+
             if (buf->format == SAMPLE_FMT_INT8)
                 channelizer_process_i8(channelizer, buf->samples, buf->num);
             else
@@ -1267,6 +1406,8 @@ int main(int argc, char **argv) {
             jaero_msk_destroy(jaero_chans[i].burstmsk);
         if (jaero_chans[i].oqpsk)
             jaero_oqpsk_destroy(jaero_chans[i].oqpsk);
+        if (jaero_chans[i].oqpsk_cont)
+            jaero_oqpsk_cont_destroy(jaero_chans[i].oqpsk_cont);
         free(jaero_chans[i].ring);
         jaero_chans[i].ring = NULL;
     }

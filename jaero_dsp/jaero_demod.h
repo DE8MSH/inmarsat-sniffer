@@ -23,6 +23,7 @@ typedef void (*jaero_acars_cb)(const uint8_t *data, int len, int channel_id, voi
 typedef struct jaero_msk_demod jaero_msk_demod_t;
 typedef struct jaero_oqpsk_demod jaero_oqpsk_demod_t;
 typedef struct jaero_pmsk_demod jaero_pmsk_demod_t;  /* continuous MSK for P-channel */
+typedef struct jaero_oqpsk_cont_demod jaero_oqpsk_cont_demod_t; /* continuous OQPSK for H/H+/L */
 
 /* --- Burst MSK demodulator (R/T channel bursts, 600/1200 baud) --- */
 jaero_msk_demod_t *jaero_msk_create(double sample_rate, double symbol_rate, int channel_id, jaero_soft_bits_cb cb, void *user);
@@ -48,6 +49,13 @@ jaero_oqpsk_demod_t *jaero_oqpsk_create(double sample_rate, double symbol_rate, 
 void jaero_oqpsk_feed(jaero_oqpsk_demod_t *d, const int16_t *audio, int num_samples);
 void jaero_oqpsk_destroy(jaero_oqpsk_demod_t *d);
 void jaero_oqpsk_set_acars_callback(jaero_oqpsk_demod_t *d, jaero_acars_cb cb, void *user);
+
+/* --- Continuous OQPSK demodulator (Aero H/H+/L, 10500 baud forward link) --- */
+jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double symbol_rate, int channel_id, jaero_soft_bits_cb cb, void *user);
+void jaero_oqpsk_cont_feed_audio(jaero_oqpsk_cont_demod_t *d, const int16_t *audio, int num_samples);
+void jaero_oqpsk_cont_feed_iq(jaero_oqpsk_cont_demod_t *d, const double *iq_interleaved, int num_samples);
+void jaero_oqpsk_cont_destroy(jaero_oqpsk_cont_demod_t *d);
+void jaero_oqpsk_cont_set_acars_callback(jaero_oqpsk_cont_demod_t *d, jaero_acars_cb cb, void *user);
 
 #ifdef __cplusplus
 }

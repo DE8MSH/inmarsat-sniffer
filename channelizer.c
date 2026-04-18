@@ -374,6 +374,22 @@ double channelizer_output_rate(channelizer_t *ch, int channel_id) {
     return 0;
 }
 
+void channelizer_adjust_center(channelizer_t *ch, double offset_hz) {
+    if (!ch) return;
+    /* Shift all NCO frequencies by offset_hz to correct PPM error.
+     * This re-centers all channels so the signal lands at DC. */
+    for (int c = 0; c < ch->num_channels; c++) {
+        channel_state_t *cs = &ch->channels[c];
+        cs->nco_freq += offset_hz;
+        double phase_inc = -2.0 * M_PI * cs->nco_freq / ch->samp_rate;
+        cs->nco_phasor = cosf((float)phase_inc) + sinf((float)phase_inc) * I;
+        /* Keep current phase, just change the rate */
+    }
+    ch->center_freq -= offset_hz;
+    fprintf(stderr, "Channelizer: adjusted center by %.0f Hz (new: %.3f MHz)\n",
+            offset_hz, ch->center_freq / 1e6);
+}
+
 void channelizer_destroy(channelizer_t *ch) {
     if (!ch) return;
 

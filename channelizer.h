@@ -60,6 +60,10 @@ int channelizer_has_freq(channelizer_t *ch, double freq, double tolerance);
 /* Get actual output sample rate for a channel after decimation. */
 double channelizer_output_rate(channelizer_t *ch, int channel_id);
 
+/* Adjust all NCO frequencies by offset_hz to compensate SDR PPM error.
+ * Called once after auto-calibration detects carrier offset. */
+void channelizer_adjust_center(channelizer_t *ch, double offset_hz);
+
 /* Destroy the channelizer and free resources. */
 void channelizer_destroy(channelizer_t *ch);
 

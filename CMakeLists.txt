@@ -150,6 +150,7 @@ set(JAERO_DSP_SOURCES
     ${PROJECT_SOURCE_DIR}/jaero_dsp/burstmskdemodulator.cpp
     ${PROJECT_SOURCE_DIR}/jaero_dsp/burstoqpskdemodulator.cpp
     ${PROJECT_SOURCE_DIR}/jaero_dsp/mskdemodulator.cpp
+    ${PROJECT_SOURCE_DIR}/jaero_dsp/oqpskdemodulator.cpp
     ${PROJECT_SOURCE_DIR}/jaero_dsp/coarsefreqestimate.cpp
     ${PROJECT_SOURCE_DIR}/jaero_dsp/fftrwrapper.cpp
     ${PROJECT_SOURCE_DIR}/jaero_dsp/fftwrapper.cpp
