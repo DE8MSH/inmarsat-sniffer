@@ -88,9 +88,11 @@ void *rtlsdr_backend_setup(int dev_index) {
     fprintf(stderr, "RTL-SDR: tuned to %.3f MHz @ %.3f Msps\n",
             center_freq / 1e6, samp_rate / 1e6);
 
-    /* Gain: manual mode, disable RTL2832U internal AGC (matches SDRReceiver) */
-    rtlsdr_set_tuner_gain_mode(dev, 1);
-    rtlsdr_set_agc_mode(dev, 0);
+    extern int agc_enabled;
+    rtlsdr_set_tuner_gain_mode(dev, agc_enabled ? 0 : 1);
+    rtlsdr_set_agc_mode(dev, agc_enabled ? 1 : 0);
+    if (agc_enabled)
+        fprintf(stderr, "RTL-SDR: AGC enabled\n");
 
     /* Find nearest supported gain value.
      * Default to max gain (496 = 49.6 dB) for weak satellite signals,

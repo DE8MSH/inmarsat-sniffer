@@ -71,6 +71,8 @@ extern int zmq_base_port;
 #endif
 extern int web_port;
 extern int feed_enabled;
+extern int jaero_format_enabled;
+extern int agc_enabled;
 #define UDP_MAX 4
 extern char *udp_hosts[UDP_MAX];
 extern int udp_ports[UDP_MAX];
@@ -119,6 +121,7 @@ static void usage(int exitcode) {
 "                             hackrf[-SERIAL], bladerfN, usrp-PRODUCT-SERIAL\n"
 "    -r, --sample-rate=HZ    sample rate in Hz (default: auto from satellite)\n"
 "    -B, --bias-tee          enable bias tee power\n"
+"    --agc                   enable RTL-SDR AGC mode\n"
 "    --soapy-gain=GAIN       SoapySDR overall gain in dB (default: 40)\n"
 "    --soapy-gain-element=NAME:VAL  per-element gain (repeatable)\n"
 "    --soapy-setting=K:V     SoapySDR device setting (repeatable)\n"
@@ -136,6 +139,7 @@ static void usage(int exitcode) {
 "Output:\n"
 "    --web[=PORT]            enable live web dashboard (default port: 8888)\n"
 "    --feed                  output JSON lines to stdout\n"
+"    --jaero-format          output JAERO text format 3 to stderr\n"
 "    --udp=HOST:PORT         send JSON messages via UDP (repeatable, max 4)\n"
 "    --basestation[=ENDPOINT] SBS (MSG,3) aircraft feed — PORT for server\n"
 "                             (default 30003), HOST:PORT to push to remote\n"
@@ -226,6 +230,8 @@ void parse_options(int argc, char **argv) {
         OPT_MQTT_USER,
         OPT_MQTT_PASS,
         OPT_MQTT_TOPIC,
+        OPT_JAERO_FORMAT,
+        OPT_AGC,
     };
 
     static const struct option longopts[] = {
@@ -270,6 +276,8 @@ void parse_options(int argc, char **argv) {
         { "mqtt-user",          required_argument, NULL, OPT_MQTT_USER },
         { "mqtt-pass",          required_argument, NULL, OPT_MQTT_PASS },
         { "mqtt-topic",         required_argument, NULL, OPT_MQTT_TOPIC },
+        { "jaero-format",       no_argument,       NULL, OPT_JAERO_FORMAT },
+        { "agc",                no_argument,       NULL, OPT_AGC },
         { "ppm",                required_argument, NULL, 'p' },
         { NULL, 0, NULL, 0 },
     };
@@ -495,6 +503,14 @@ void parse_options(int argc, char **argv) {
             break;
         case OPT_MQTT_TOPIC:
             mqtt_topic = strdup(optarg);
+            break;
+
+        case OPT_JAERO_FORMAT:
+            jaero_format_enabled = 1;
+            break;
+
+        case OPT_AGC:
+            agc_enabled = 1;
             break;
 
         case OPT_UDP: {

@@ -18,7 +18,8 @@ extern "C" {
 #endif
 
 typedef void (*jaero_soft_bits_cb)(const unsigned char *bits, int num_bits, int channel_id, void *user);
-typedef void (*jaero_acars_cb)(const uint8_t *data, int len, int channel_id, void *user);
+typedef void (*jaero_acars_cb)(const uint8_t *data, int len, int channel_id,
+                               uint32_t aes_id, uint8_t ges_id, void *user);
 
 typedef struct jaero_msk_demod jaero_msk_demod_t;
 typedef struct jaero_oqpsk_demod jaero_oqpsk_demod_t;

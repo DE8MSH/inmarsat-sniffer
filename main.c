@@ -348,6 +348,8 @@ char *vita49_endpoint = NULL;
 int web_enabled = 0;
 int web_port = 8888;
 int feed_enabled = 0;
+int jaero_format_enabled = 0;
+int agc_enabled = 0;
 #define UDP_MAX 4
 char *udp_hosts[UDP_MAX];
 int udp_ports[UDP_MAX];
@@ -515,11 +517,20 @@ static void print_status(void) {
     else
         snprintf(burst_str, sizeof(burst_str), "%lu", bursts);
 
-    fprintf(stderr, "\r[STD-C: %lu %s BER:%.2f CRC:%lu/%lu | "
-            "Aero: %s bursts %lu msgs CRC:%lu | drop:%lu]   ",
-            stdc, synced ? "SYNC" : "SRCH",
-            stdc_ber, sc_ok, sc_ok + sc_fail,
-            burst_str, msgs, ac_ok, drops);
+    if (op_mode == MODE_AERO) {
+        fprintf(stderr, "\r[Aero: %s bursts %lu msgs CRC:%lu | drop:%lu]   ",
+                burst_str, msgs, ac_ok, drops);
+    } else if (op_mode == MODE_STDC) {
+        fprintf(stderr, "\r[STD-C: %lu %s BER:%.2f CRC:%lu/%lu | drop:%lu]   ",
+                stdc, synced ? "SYNC" : "SRCH",
+                stdc_ber, sc_ok, sc_ok + sc_fail, drops);
+    } else {
+        fprintf(stderr, "\r[STD-C: %lu %s BER:%.2f CRC:%lu/%lu | "
+                "Aero: %s bursts %lu msgs CRC:%lu | drop:%lu]   ",
+                stdc, synced ? "SYNC" : "SRCH",
+                stdc_ber, sc_ok, sc_ok + sc_fail,
+                burst_str, msgs, ac_ok, drops);
+    }
 }
 
 /* ---- STD-C demod/decode chain ---- */
@@ -641,7 +652,9 @@ static void stdc_bits_cb(const float *soft_bits, int num_bits, void *user) {
  * acarsitem.valid was checked inside jaero_demod.cpp, so `data` is ACARS
  * userdata — pass through libacars for human-readable output. */
 static void jaero_acars_data_cb(const uint8_t *data, int len,
-                                  int channel_id, void *user) {
+                                  int channel_id,
+                                  uint32_t aes_id, uint8_t ges_id,
+                                  void *user) {
     (void)user;
     atomic_fetch_add(&stat_aero_msgs, 1);
     /* AeroL only calls us with acarsitem.valid == true, so every event
@@ -698,8 +711,8 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
             if (acars_node && acars_node->data) {
                 la_acars_msg *amsg = (la_acars_msg *)acars_node->data;
                 if (amsg->reasm_status != LA_REASM_IN_PROGRESS && !amsg->err) {
-                    fprintf(stderr, "\n[ACARS ch%d] reg=%s label=%.2s blk=%c",
-                            channel_id,
+                    fprintf(stderr, "\n[ACARS ch%d AES:%06X GES:%02X] reg=%s label=%.2s blk=%c",
+                            channel_id, aes_id, ges_id,
                             amsg->reg[0] ? amsg->reg : "?",
                             amsg->label, amsg->block_id ? amsg->block_id : '?');
                     if (amsg->txt && amsg->txt[0])
@@ -717,6 +730,8 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                     aero_message_t outmsg;
                     memset(&outmsg, 0, sizeof(outmsg));
                     outmsg.channel_id = channel_id;
+                    outmsg.aes_id = aes_id;
+                    outmsg.ges_id = ges_id;
                     outmsg.lat = NAN;
                     outmsg.lon = NAN;
                     outmsg.alt_ft = -1;

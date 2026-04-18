@@ -25,6 +25,8 @@ typedef struct {
     int text_len;
     int channel_id;
     uint64_t timestamp;
+    uint32_t aes_id;        /* AES (aircraft) ID from ISU header */
+    uint8_t ges_id;         /* GES (ground station) ID from ISU header */
     /* Raw ACARS frame for libacars parsing */
     const uint8_t *raw_data;
     int raw_len;

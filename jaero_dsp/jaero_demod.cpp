@@ -42,7 +42,7 @@ static void aerol_acars_adapter(ACARSItem &acarsitem, void *ctx)
         /* pack ISU userdata as the output payload */
         const uint8_t *data = acarsitem.isuitem.userdata.data();
         int len = (int)acarsitem.isuitem.userdata.size();
-        d->acars_cb(data, len, d->channel_id, d->acars_user);
+        d->acars_cb(data, len, d->channel_id, acarsitem.isuitem.AESID, acarsitem.isuitem.GESID, d->acars_user);
     }
 }
 
@@ -73,7 +73,7 @@ static void oqpsk_aerol_acars_adapter(ACARSItem &acarsitem, void *ctx)
     if (d->acars_cb && acarsitem.valid) {
         const uint8_t *data = acarsitem.isuitem.userdata.data();
         int len = (int)acarsitem.isuitem.userdata.size();
-        d->acars_cb(data, len, d->channel_id, d->acars_user);
+        d->acars_cb(data, len, d->channel_id, acarsitem.isuitem.AESID, acarsitem.isuitem.GESID, d->acars_user);
     }
 }
 
@@ -289,7 +289,7 @@ static void pmsk_acars_adapter(ACARSItem &acarsitem, void *ctx)
     if (d->acars_cb && acarsitem.valid) {
         const uint8_t *data = acarsitem.isuitem.userdata.data();
         int len = (int)acarsitem.isuitem.userdata.size();
-        d->acars_cb(data, len, d->channel_id, d->acars_user);
+        d->acars_cb(data, len, d->channel_id, acarsitem.isuitem.AESID, acarsitem.isuitem.GESID, d->acars_user);
     }
 }
 
@@ -387,7 +387,7 @@ static void oqpsk_cont_aerol_acars_adapter(ACARSItem &acarsitem, void *ctx)
     if (d->acars_cb && acarsitem.valid) {
         const uint8_t *data = acarsitem.isuitem.userdata.data();
         int len = (int)acarsitem.isuitem.userdata.size();
-        d->acars_cb(data, len, d->channel_id, d->acars_user);
+        d->acars_cb(data, len, d->channel_id, acarsitem.isuitem.AESID, acarsitem.isuitem.GESID, d->acars_user);
     }
 }
 

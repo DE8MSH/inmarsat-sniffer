@@ -18,6 +18,7 @@
 #include "feed.h"
 
 extern int feed_enabled;
+extern int jaero_format_enabled;
 extern char *satellite_name;
 #define UDP_MAX 4
 extern char *udp_hosts[UDP_MAX];
@@ -285,6 +286,48 @@ void feed_aero_message(const aero_message_t *msg) {
 
     if (len > 0 && len < (int)sizeof(buf))
         send_json(buf, len);
+
+    /* JAERO text format 3 output to stderr */
+    if (jaero_format_enabled) {
+        time_t now = time(NULL);
+        struct tm tm;
+        gmtime_r(&now, &tm);
+
+        /* Right-pad registration to 7 chars with leading dots (JAERO convention) */
+        char reg_padded[8];
+        int rlen = (int)strlen(msg->reg);
+        int pad = 7 - rlen;
+        if (pad < 0) pad = 0;
+        memset(reg_padded, '.', pad);
+        strncpy(reg_padded + pad, msg->reg, 7 - pad);
+        reg_padded[7] = '\0';
+
+        char label1 = msg->label[1];
+        if ((unsigned char)label1 == 127) label1 = 'd';
+
+        fprintf(stderr, "\n%02d:%02d:%02d %02d-%02d-%02d UTC "
+                "AES:%06X GES:%02X %c %s %c %c%c %c",
+                tm.tm_hour, tm.tm_min, tm.tm_sec,
+                tm.tm_mday, tm.tm_mon + 1, tm.tm_year % 100,
+                msg->aes_id, msg->ges_id,
+                msg->mode ? msg->mode : '2',
+                reg_padded,
+                msg->ack ? msg->ack : ' ',
+                msg->label[0] ? msg->label[0] : '_',
+                label1 ? label1 : '_',
+                msg->block_id ? msg->block_id : ' ');
+
+        if (msg->text_len > 0) {
+            fprintf(stderr, "\n\t");
+            for (int i = 0; i < msg->text_len; i++) {
+                char c = msg->text[i];
+                if (c == '\r') continue;
+                if (c == '\n') fprintf(stderr, "\n\t");
+                else fputc(c, stderr);
+            }
+        }
+        fprintf(stderr, "\n");
+    }
 }
 
 void feed_shutdown(void) {
