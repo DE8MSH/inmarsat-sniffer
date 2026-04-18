@@ -120,12 +120,24 @@ case "$SDR" in
             exit 1
         fi
 
-        BIAS_ARG=""
-        [ $BIAS_TEE -eq 1 ] && BIAS_ARG="-T 1"
+        if [ $BIAS_TEE -eq 1 ]; then
+            if command -v rtl_biast &>/dev/null; then
+                echo "Enabling bias tee via rtl_biast..."
+                rtl_biast -b 1 2>/dev/null || true
+            else
+                echo "Warning: rtl_biast not found, bias tee not enabled." >&2
+                echo "Install rtl-sdr-blog tools for bias tee support." >&2
+            fi
+        fi
 
         echo "Recording... press Ctrl+C to stop early."
         echo ""
-        rtl_sdr -f "$CENTER" -s "$RATE" -g "$GAIN" $BIAS_ARG -n "$MAX_SAMPLES" "$OUTPUT"
+        rtl_sdr -f "$CENTER" -s "$RATE" -g "$GAIN" -n "$MAX_SAMPLES" "$OUTPUT"
+
+        # Disable bias tee after recording
+        if [ $BIAS_TEE -eq 1 ] && command -v rtl_biast &>/dev/null; then
+            rtl_biast -b 0 2>/dev/null || true
+        fi
         ;;
 
     sdrplay)
