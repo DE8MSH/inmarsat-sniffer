@@ -365,6 +365,11 @@ double jaero_pmsk_get_mse(jaero_pmsk_demod_t *d) {
     return d->demod->getMSE();
 }
 
+double jaero_pmsk_get_ebno(jaero_pmsk_demod_t *d) {
+    if (!d || !d->demod) return 0;
+    return d->demod->getEbNo();
+}
+
 /* ============================================================
  * Continuous OQPSK demodulator (Aero H/H+/L, 10500 baud forward link)
  * Uses OqpskDemodulator (not BurstOqpskDemodulator).
@@ -478,6 +483,11 @@ void jaero_oqpsk_cont_set_acars_callback(jaero_oqpsk_cont_demod_t *d,
 double jaero_oqpsk_cont_get_mse(jaero_oqpsk_cont_demod_t *d) {
     if (!d || !d->demod) return 1.0;
     return d->demod->getMSE();
+}
+
+double jaero_oqpsk_cont_get_ebno(jaero_oqpsk_cont_demod_t *d) {
+    if (!d || !d->demod) return 0;
+    return d->demod->getEbNo();
 }
 
 } /* extern "C" */

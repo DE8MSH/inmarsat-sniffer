@@ -84,7 +84,8 @@ typedef struct {
     unsigned long burst_count;
     double last_msg_time;
     unsigned long drops;
-    double mse;  /* signal quality: lower = better, 0-1 range */
+    double mse;    /* signal quality: lower = better, 0-1 range */
+    double ebno;   /* Eb/No in dB: higher = better signal */
 } chan_web_info_t;
 
 void web_get_channel_info(chan_web_info_t *out, int *n) {
@@ -97,13 +98,17 @@ void web_get_channel_info(chan_web_info_t *out, int *n) {
         out[i].burst_count = atomic_load(&jaero_chans[i].burst_count);
         out[i].last_msg_time = jaero_chans[i].last_msg_time;
         out[i].drops = atomic_load(&jaero_chans[i].drops);
-        /* Read MSE from whichever demod is active on this channel */
-        double mse = 1.0;
-        if (jaero_chans[i].pmsk)
+        /* Read MSE and Eb/No from whichever demod is active */
+        double mse = 1.0, ebno = 0;
+        if (jaero_chans[i].pmsk) {
             mse = jaero_pmsk_get_mse(jaero_chans[i].pmsk);
-        else if (jaero_chans[i].oqpsk_cont)
+            ebno = jaero_pmsk_get_ebno(jaero_chans[i].pmsk);
+        } else if (jaero_chans[i].oqpsk_cont) {
             mse = jaero_oqpsk_cont_get_mse(jaero_chans[i].oqpsk_cont);
+            ebno = jaero_oqpsk_cont_get_ebno(jaero_chans[i].oqpsk_cont);
+        }
         out[i].mse = mse;
+        out[i].ebno = ebno;
     }
     *n = count;
 }

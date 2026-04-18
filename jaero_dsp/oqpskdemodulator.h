@@ -61,6 +61,7 @@ public:
     void setSoftBitsCallback(oqpsk_soft_bits_cb cb, void *user);
 
     double getMSE() const { return mse; }
+    double getEbNo() const { return ebnomeasure ? ebnomeasure->EbNo : 0; }
 
 private:
     oqpsk_soft_bits_cb soft_bits_cb;

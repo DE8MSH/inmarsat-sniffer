@@ -272,6 +272,7 @@ static int build_json(char *buf, int maxlen) {
             double last_msg_time;
             unsigned long drops;
             double mse;
+            double ebno;
         } chan_web_info_t;
 
         /* Gather channel info without holding main's lock */
@@ -286,9 +287,9 @@ static int build_json(char *buf, int maxlen) {
             double age = now_unix() - chinfo[i].last_msg_time;
             if (chinfo[i].last_msg_time < 1) age = -1;
             pos += snprintf(buf + pos, maxlen - pos,
-                "{\"ch\":%d,\"baud\":%d,\"msgs\":%lu,\"age\":%.0f,\"mse\":%.3f}",
+                "{\"ch\":%d,\"baud\":%d,\"msgs\":%lu,\"age\":%.0f,\"mse\":%.3f,\"ebno\":%.1f}",
                 chinfo[i].channel_id, chinfo[i].baud_rate,
-                chinfo[i].msg_count, age, chinfo[i].mse);
+                chinfo[i].msg_count, age, chinfo[i].mse, chinfo[i].ebno);
         }
         pos += snprintf(buf + pos, maxlen - pos, "]");
     }
@@ -435,15 +436,14 @@ static const char HTML_PAGE[] =
 "    var dot=active?'\\u25CF':'\\u25CB';"
 "    var color=active?'#38bdf8':'#475569';"
 "    var msgs=c.msgs>0?fmtN(c.msgs):'\\u2014';"
-"    var oq=c.baud>=8400;"
-"    var sq=Math.max(0,Math.min(100,Math.round((1.0-c.mse)*100)));"
-"    var sqc=oq?(sq>20?'#22c55e':sq>10?'#eab308':'#ef4444'):(sq>60?'#22c55e':sq>30?'#eab308':'#ef4444');"
+"    var eb=c.ebno.toFixed(1);"
+"    var ebc=c.msgs>0?'#38bdf8':'#64748b';"
 "    html+='<div style=\"color:'+color+';display:flex;gap:6px;padding:1px 0;align-items:center\">'"
 "      +'<span>'+dot+'</span>'"
 "      +'<span style=\"min-width:32px\">ch'+c.ch+'</span>'"
 "      +'<span style=\"min-width:78px\">'+baud+'</span>'"
 "      +'<span style=\"min-width:38px;text-align:right\">'+msgs+'</span>'"
-"      +'<span style=\"min-width:50px\"><span style=\"display:inline-block;width:'+sq+'%;max-width:40px;height:6px;background:'+sqc+';border-radius:2px\"></span></span>'"
+"      +'<span style=\"min-width:55px;color:'+ebc+'\">'+eb+' dB</span>'"
 "      +'</div>';"
 "  });"
 "  document.getElementById('n-ac').textContent=locked+'/'+d.channels.length;"
