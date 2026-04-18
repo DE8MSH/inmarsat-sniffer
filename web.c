@@ -29,7 +29,7 @@ extern volatile sig_atomic_t running;
 /* ---- Ring buffer storage ---- */
 
 #define MAX_STDC_MSGS   200
-#define MAX_AIRCRAFT    64
+#define MAX_AIRCRAFT    512
 #define MAX_FIXES       8
 
 typedef struct {

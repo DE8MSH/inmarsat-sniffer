@@ -429,7 +429,7 @@ jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double sym
     s.freq_center              = 8000.0;
     s.lockingbw                = (symbol_rate <= 8400) ? 5000.0 : 10500.0;
     s.coarsefreqest_fft_power  = 14;
-    s.signalthreshold          = 0.65; /* JAERO default — higher = more permissive */
+    s.signalthreshold          = 0.8; /* raised from JAERO default 0.65 — accepts noisier constellations */
 
     d->demod->setSettings(s);
     d->demod->setSoftBitsCallback(oqpsk_cont_bits_adapter, d);

@@ -1,10 +1,13 @@
 /*
- * DDC channelizer -- per-channel digital downconversion
+ * DDC channelizer -- two-stage per-channel digital downconversion
  *
  * Architecture:
- *   1. NCO mix each channel to baseband (rotating phasor)
- *   2. Multi-stage FIR decimate (each stage <= 16x, cascaded)
- *   3. Output at ~4x symbol rate for the demodulator
+ *   Stage 1: Per-band NCO mix + coarse decimation from SDR rate to an
+ *            intermediate rate (400 kHz for MSK/BPSK bands, 200 kHz for
+ *            OQPSK bands).  One band per frequency cluster.
+ *   Stage 2: Per-channel NCO mix (relative to band center) + fine
+ *            decimation from intermediate rate to ~48 kHz output.
+ *   Final:   127-tap cleanup filter at output rate (unchanged).
  *
  * Copyright (c) 2026 CEMAXECUTER LLC
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -25,40 +28,76 @@
 
 /*
  * Each decimation stage has a short FIR lowpass that anti-aliases
- * before downsampling. With decimation <= 16 per stage and 31 taps,
- * the filter works well. Stages cascade: e.g. 1000x = 10 * 10 * 10.
+ * before downsampling. With decimation <= 16 per stage and 63 taps,
+ * the filter works well. Stages cascade: e.g. 50x = 5 * 10.
  */
-#define MAX_STAGES 4
-#define STAGE_FIR_TAPS 63  /* doubled from 31; two-stage refactor will improve further */
+#define MAX_STAGES       4
+#define STAGE_FIR_TAPS   63   /* both stage-1 and stage-2 FIR tap count */
 #define CLEANUP_FIR_TAPS 127  /* final narrowband filter at output rate */
+#define MAX_BANDS        8    /* maximum concurrent band groups */
+
+/* ------------------------------------------------------------------ */
+/* Decimation stage                                                     */
+/* ------------------------------------------------------------------ */
 
 typedef struct {
     int decimation;
     int count;
-    float fir_taps[STAGE_FIR_TAPS];  /* real-valued lowpass */
+    float fir_taps[STAGE_FIR_TAPS];
     float complex fir_hist[STAGE_FIR_TAPS];
     int fir_idx;
 } decim_stage_t;
 
-/* Per-channel state */
+/* ------------------------------------------------------------------ */
+/* Per-band state (stage 1)                                            */
+/* ------------------------------------------------------------------ */
+
 typedef struct {
     int active;
-    int channel_id;
-    channel_type_t type;
+    double center_freq;       /* absolute Hz */
+    double intermediate_rate; /* Hz after stage-1 decimation */
 
-    /* NCO */
+    /* Stage-1 NCO (offset from SDR center) */
     double nco_freq;
     float complex nco_phasor;
     float complex nco_current;
     int nco_renorm;
 
-    /* Cascaded decimation stages */
+    /* Stage-1 cascaded decimation */
     decim_stage_t stages[MAX_STAGES];
     int num_stages;
 
-    /* Final cleanup filter (non-decimating, runs at output rate).
-     * Double-buffer trick: hist is 2×NTAPS so any contiguous window of
-     * NTAPS samples is available without circular-wrap copies. */
+    /* Intermediate sample buffer (output of stage 1) */
+    float complex *inter_buf;
+    int inter_len;
+    int inter_cap;
+
+    /* Which channel indices belong to this band */
+    int channel_indices[MAX_CHANNELS];
+    int num_channels;
+} band_state_t;
+
+/* ------------------------------------------------------------------ */
+/* Per-channel state (stage 2 + cleanup)                               */
+/* ------------------------------------------------------------------ */
+
+typedef struct {
+    int active;
+    int channel_id;
+    channel_type_t type;
+    int band_idx;             /* index into channelizer->bands[] */
+
+    /* Stage-2 NCO (offset from band center) */
+    double nco_freq;
+    float complex nco_phasor;
+    float complex nco_current;
+    int nco_renorm;
+
+    /* Stage-2 cascaded decimation (intermediate_rate -> output_rate) */
+    decim_stage_t stages[MAX_STAGES];
+    int num_stages;
+
+    /* Final cleanup filter */
     float cleanup_taps[CLEANUP_FIR_TAPS];
     float complex cleanup_hist[CLEANUP_FIR_TAPS * 2];
     int cleanup_idx;
@@ -70,17 +109,29 @@ typedef struct {
     int out_cap;
 } channel_state_t;
 
+/* ------------------------------------------------------------------ */
+/* Channelizer struct                                                   */
+/* ------------------------------------------------------------------ */
+
 struct channelizer {
     double center_freq;
     double samp_rate;
     channel_cb_t cb;
     void *user;
 
+    /* Stage-2 channels */
     channel_state_t channels[MAX_CHANNELS];
     int num_channels;
+
+    /* Stage-1 bands */
+    band_state_t bands[MAX_BANDS];
+    int num_bands;
 };
 
-/* Design lowpass FIR (windowed sinc, Blackman window) */
+/* ------------------------------------------------------------------ */
+/* FIR design                                                           */
+/* ------------------------------------------------------------------ */
+
 static void design_lowpass(float *taps, int num_taps, double cutoff) {
     int M = num_taps - 1;
     double sum = 0;
@@ -104,8 +155,10 @@ static void design_lowpass(float *taps, int num_taps, double cutoff) {
         taps[i] /= (float)sum;
 }
 
-/* Process one complex sample through a decimation stage.
- * Returns 1 when an output sample is ready in *out. */
+/* ------------------------------------------------------------------ */
+/* Decimation stage processing                                          */
+/* ------------------------------------------------------------------ */
+
 static inline int decim_stage_process(decim_stage_t *st,
                                        float complex in,
                                        float complex *out) {
@@ -116,7 +169,6 @@ static inline int decim_stage_process(decim_stage_t *st,
         return 0;
     st->count = 0;
 
-    /* Compute FIR output */
     float complex acc = 0;
     int idx = st->fir_idx;
     for (int t = 0; t < STAGE_FIR_TAPS; t++) {
@@ -128,8 +180,10 @@ static inline int decim_stage_process(decim_stage_t *st,
     return 1;
 }
 
-/* Factor total_decim into stages of at most max_per_stage.
- * Returns number of stages, fills decim[] array. */
+/* ------------------------------------------------------------------ */
+/* Decimation planning                                                  */
+/* ------------------------------------------------------------------ */
+
 static int plan_decimation(int total, int max_per_stage,
                             int *decim, int max_stages) {
     int n = 0;
@@ -140,7 +194,6 @@ static int plan_decimation(int total, int max_per_stage,
             decim[n++] = remaining;
             remaining = 1;
         } else {
-            /* Find largest factor <= max_per_stage */
             int best = 2;
             for (int d = max_per_stage; d >= 2; d--) {
                 if (remaining % d == 0) {
@@ -153,84 +206,93 @@ static int plan_decimation(int total, int max_per_stage,
         }
     }
 
-    /* If we couldn't fully factor, add remaining as final stage */
     if (remaining > 1 && n < max_stages)
         decim[n++] = remaining;
 
     return n;
 }
 
+/* ------------------------------------------------------------------ */
+/* Channel / band metadata helpers                                      */
+/* ------------------------------------------------------------------ */
+
 static double target_output_rate(channel_type_t type) {
     switch (type) {
     case CHAN_STDC_EGC:   return 1200.0 * 16.0;
-    case CHAN_AERO_600:   return 48000.0;   /* 80 SPS — also used by ZMQ to JAERO */
-    case CHAN_AERO_1200:  return 48000.0;  /* 40 SPS */
-    case CHAN_AERO_10500: return 48000.0;  /* must match OqpskDemodulator's hardcoded Fs */
-    case CHAN_AERO_8400:  return 48000.0;  /* must match BurstOqpskDemodulator's hardcoded Fs */
+    case CHAN_AERO_600:   return 48000.0;
+    case CHAN_AERO_1200:  return 48000.0;
+    case CHAN_AERO_10500: return 48000.0;
+    case CHAN_AERO_8400:  return 48000.0;
     default: return 48000.0;
     }
 }
 
-/* Signal bandwidth for each channel type (Hz).
- * Used to set the final channelizer filter width so only
- * the target signal passes through to the demod. */
-static double signal_bandwidth(channel_type_t type) {
+/* Target intermediate rate for stage-1 based on channel type.
+ * OQPSK channels need a narrower intermediate band for cleaner stage-2
+ * decimation; MSK/BPSK channels tolerate a wider intermediate band. */
+static double target_intermediate_rate(channel_type_t type) {
     switch (type) {
-    case CHAN_STDC_EGC:   return 4800.0;    /* BPSK 1200 baud, ~2x symbol rate */
-    case CHAN_AERO_600:   return 6000.0;    /* ±3 kHz cleanup */
-    case CHAN_AERO_1200:  return 6000.0;
-    case CHAN_AERO_10500: return 15000.0;   /* OQPSK wider signal */
-    case CHAN_AERO_8400:  return 14000.0;   /* 8400 baud OQPSK α=0.6 needs ±6720 Hz */
-    default: return 0;                      /* 0 = use default anti-alias */
+    case CHAN_AERO_10500:
+    case CHAN_AERO_8400:
+        return 200000.0;   /* 200 kHz for OQPSK */
+    default:
+        return 400000.0;   /* 400 kHz for BPSK / STD-C */
     }
 }
 
-channelizer_t *channelizer_create(double center_freq, double samp_rate,
-                                   channel_cb_t cb, void *user) {
-    channelizer_t *ch = calloc(1, sizeof(*ch));
-    if (!ch) return NULL;
-
-    ch->center_freq = center_freq;
-    ch->samp_rate = samp_rate;
-    ch->cb = cb;
-    ch->user = user;
-    ch->num_channels = 0;
-
-    return ch;
+/* Find the largest factor of n that is <= limit.
+ * Used to maximize stage-1 decimation while keeping the intermediate
+ * rate wide enough for all channels in the cluster. */
+static int largest_factor_leq(int n, int limit) {
+    if (n <= 1) return 1;
+    int best = 1;
+    for (int d = 2; d * d <= n; d++) {
+        if (n % d != 0) continue;
+        if (d <= limit && d > best) best = d;
+        int other = n / d;
+        if (other <= limit && other > best) best = other;
+    }
+    if (n <= limit && n > best) best = n;
+    return best;
 }
 
-int channelizer_add_channel(channelizer_t *ch, double freq,
-                             channel_type_t type, int channel_id) {
-    if (ch->num_channels >= MAX_CHANNELS)
-        return -1;
+static double signal_bandwidth(channel_type_t type) {
+    switch (type) {
+    case CHAN_STDC_EGC:   return 4800.0;
+    case CHAN_AERO_600:   return 6000.0;
+    case CHAN_AERO_1200:  return 6000.0;
+    case CHAN_AERO_10500: return 15000.0;
+    case CHAN_AERO_8400:  return 14000.0;
+    default: return 0;
+    }
+}
 
-    channel_state_t *c = &ch->channels[ch->num_channels];
-    memset(c, 0, sizeof(*c));
+/* ------------------------------------------------------------------ */
+/* Band initialisation                                                  */
+/* ------------------------------------------------------------------ */
 
-    c->active = 1;
-    c->channel_id = channel_id;
-    c->type = type;
+static int init_band(band_state_t *b, double center_freq,
+                     double samp_rate, int s1_decim) {
+    memset(b, 0, sizeof(*b));
+    b->active = 1;
+    b->center_freq = center_freq;
+    if (s1_decim < 1) s1_decim = 1;
+    b->intermediate_rate = samp_rate / s1_decim;
 
-    /* NCO setup */
-    c->nco_freq = freq - ch->center_freq;
-    double phase_inc = -2.0 * M_PI * c->nco_freq / ch->samp_rate;
-    c->nco_phasor = cosf((float)phase_inc) + sinf((float)phase_inc) * I;
-    c->nco_current = 1.0f;
-    c->nco_renorm = 0;
+    /* NCO: mix band center to DC relative to SDR center.
+     * nco_freq is set when we know the SDR center; caller sets it after. */
+    b->nco_freq   = 0.0;   /* caller will fill */
+    b->nco_phasor = 1.0f;
+    b->nco_current = 1.0f;
 
-    /* Compute total decimation */
-    double out_rate = target_output_rate(type);
-    int total_decim = (int)(ch->samp_rate / out_rate);
-    if (total_decim < 1) total_decim = 1;
-
-    /* Plan cascaded stages (max 16x per stage for good filter quality) */
+    /* Plan stage-1 decimation cascade */
     int stage_decims[MAX_STAGES];
-    c->num_stages = plan_decimation(total_decim, 16, stage_decims, MAX_STAGES);
+    b->num_stages = plan_decimation(s1_decim, 16, stage_decims, MAX_STAGES);
 
-    /* Initialize each stage with its own anti-alias filter */
-    double stage_rate = ch->samp_rate;
-    for (int i = 0; i < c->num_stages; i++) {
-        decim_stage_t *st = &c->stages[i];
+    /* Design per-stage anti-alias filters */
+    double stage_rate = samp_rate;
+    for (int i = 0; i < b->num_stages; i++) {
+        decim_stage_t *st = &b->stages[i];
         st->decimation = stage_decims[i];
         st->count = 0;
         st->fir_idx = 0;
@@ -241,11 +303,156 @@ int channelizer_add_channel(channelizer_t *ch, double freq,
 
         stage_rate /= st->decimation;
     }
+    /* stage_rate should now equal b->intermediate_rate */
 
-    /* Final cleanup filter: narrow bandpass at output rate.
-     * The decimation stages only do anti-alias filtering which leaves
-     * a wide passband. This 127-tap FIR at the output rate (e.g. 48 kHz)
-     * isolates just the target signal bandwidth. */
+    /* Intermediate buffer: hold up to 0.1 s worth of samples */
+    b->inter_cap = (int)(b->intermediate_rate * 0.1) + 512;
+    b->inter_buf = malloc(b->inter_cap * sizeof(float complex));
+    if (!b->inter_buf) return -1;
+    b->inter_len = 0;
+    b->num_channels = 0;
+
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Find or create a band that can absorb a new channel                  */
+/* ------------------------------------------------------------------ */
+
+/* Returns band index (>=0) or -1 on failure.
+ * s1_decim is the stage-1 decimation factor chosen by the caller
+ * to guarantee exact total decimation (s1 * s2 = total). */
+static int find_or_create_band(channelizer_t *ch, double freq,
+                                int channel_slot, int s1_decim) {
+    double actual_inter = ch->samp_rate / (double)s1_decim;
+
+    /* Tolerance: channel must fit within ±40% of intermediate BW
+     * around the band center */
+    double tol = actual_inter * 0.4;
+
+    /* Search for an existing compatible band */
+    for (int b = 0; b < ch->num_bands; b++) {
+        band_state_t *bd = &ch->bands[b];
+        if (!bd->active) continue;
+        /* Check rate compatibility (must have same s1_decim) */
+        if (fabs(bd->intermediate_rate - actual_inter) >
+            actual_inter * 0.01) continue;
+        /* Check frequency proximity */
+        if (fabs(bd->center_freq - freq) <= tol &&
+            bd->num_channels < MAX_CHANNELS) {
+            bd->channel_indices[bd->num_channels++] = channel_slot;
+            return b;
+        }
+    }
+
+    /* No suitable band found — create a new one */
+    if (ch->num_bands >= MAX_BANDS) {
+        fprintf(stderr, "Channelizer: exceeded MAX_BANDS (%d)\n", MAX_BANDS);
+        return -1;
+    }
+
+    int bidx = ch->num_bands++;
+    band_state_t *bd = &ch->bands[bidx];
+
+    if (init_band(bd, freq, ch->samp_rate, s1_decim) != 0)
+        return -1;
+
+    /* Set NCO: shift band center to DC */
+    bd->nco_freq = freq - ch->center_freq;
+    double phase_inc = -2.0 * M_PI * bd->nco_freq / ch->samp_rate;
+    bd->nco_phasor  = cosf((float)phase_inc) + sinf((float)phase_inc) * I;
+    bd->nco_current = 1.0f;
+
+    bd->channel_indices[bd->num_channels++] = channel_slot;
+
+    fprintf(stderr,
+            "Channelizer: new band %d  center=%.3f MHz  "
+            "s1_decim=%d  inter_rate=%.0f Hz\n",
+            bidx, freq / 1e6, s1_decim, bd->intermediate_rate);
+
+    return bidx;
+}
+
+/* ------------------------------------------------------------------ */
+/* Public API                                                           */
+/* ------------------------------------------------------------------ */
+
+channelizer_t *channelizer_create(double center_freq, double samp_rate,
+                                   channel_cb_t cb, void *user) {
+    channelizer_t *ch = calloc(1, sizeof(*ch));
+    if (!ch) return NULL;
+
+    ch->center_freq = center_freq;
+    ch->samp_rate   = samp_rate;
+    ch->cb   = cb;
+    ch->user = user;
+    ch->num_channels = 0;
+    ch->num_bands    = 0;
+
+    return ch;
+}
+
+int channelizer_add_channel(channelizer_t *ch, double freq,
+                             channel_type_t type, int channel_id) {
+    if (ch->num_channels >= MAX_CHANNELS)
+        return -1;
+
+    int slot = ch->num_channels;
+    channel_state_t *c = &ch->channels[slot];
+    memset(c, 0, sizeof(*c));
+
+    c->active     = 1;
+    c->channel_id = channel_id;
+    c->type       = type;
+
+    /* Compute total decimation first to guarantee correct output rate.
+     * Then factor into s1 * s2 with s1 close to target intermediate. */
+    double out_rate = target_output_rate(type);
+    int total_decim = (int)(ch->samp_rate / out_rate);
+    if (total_decim < 1) total_decim = 1;
+
+    double want_inter = target_intermediate_rate(type);
+    int max_s1 = (int)(ch->samp_rate / want_inter);
+    if (max_s1 < 1) max_s1 = 1;
+    int s1_decim = largest_factor_leq(total_decim, max_s1);
+    int s2_decim = total_decim / s1_decim;
+    if (s2_decim < 1) s2_decim = 1;
+
+    /* Find or create stage-1 band with exact s1_decim */
+    int bidx = find_or_create_band(ch, freq, slot, s1_decim);
+    if (bidx < 0) return -1;
+    c->band_idx = bidx;
+
+    band_state_t *bd = &ch->bands[bidx];
+    double inter_rate = bd->intermediate_rate;
+
+    /* Stage-2 NCO: mix channel center to DC relative to band center */
+    c->nco_freq = freq - bd->center_freq;
+    double phase_inc = -2.0 * M_PI * c->nco_freq / inter_rate;
+    c->nco_phasor  = cosf((float)phase_inc) + sinf((float)phase_inc) * I;
+    c->nco_current = 1.0f;
+    c->nco_renorm  = 0;
+
+    /* Stage-2 decimation: inter_rate -> output_rate */
+    int stage_decims[MAX_STAGES];
+    c->num_stages = plan_decimation(s2_decim, 16, stage_decims, MAX_STAGES);
+
+    double stage_rate = inter_rate;
+    for (int i = 0; i < c->num_stages; i++) {
+        decim_stage_t *st = &c->stages[i];
+        st->decimation = stage_decims[i];
+        st->count      = 0;
+        st->fir_idx    = 0;
+        memset(st->fir_hist, 0, sizeof(st->fir_hist));
+
+        double cutoff = 0.4 / st->decimation;
+        design_lowpass(st->fir_taps, STAGE_FIR_TAPS, cutoff);
+
+        stage_rate /= st->decimation;
+    }
+    /* stage_rate is the actual output rate */
+
+    /* Final cleanup filter */
     double sig_bw = signal_bandwidth(type);
     c->cleanup_idx = 0;
     memset(c->cleanup_hist, 0, sizeof(c->cleanup_hist));
@@ -258,9 +465,16 @@ int channelizer_add_channel(channelizer_t *ch, double freq,
     }
 
     /* Output buffer */
-    c->out_cap = (int)(stage_rate * 1.1) + 256;
+    c->out_cap = (int)(stage_rate * 0.1) + 512;
     c->out_buf = malloc(c->out_cap * sizeof(float complex));
+    if (!c->out_buf) return -1;
     c->out_len = 0;
+
+    fprintf(stderr,
+            "Channelizer: ch%d  freq=%.3f MHz  type=%d  "
+            "band=%d  s1=%d  s2=%d  total=%d  out_rate=%.0f Hz\n",
+            channel_id, freq / 1e6, (int)type,
+            bidx, s1_decim, s2_decim, total_decim, stage_rate);
 
     ch->num_channels++;
     return 0;
@@ -268,61 +482,102 @@ int channelizer_add_channel(channelizer_t *ch, double freq,
 
 void channelizer_process(channelizer_t *ch, const float *samples,
                           int num_samples) {
+    /*
+     * Stage 1: for each input sample, NCO-mix and decimate into each
+     * band's intermediate buffer.
+     */
     for (int s = 0; s < num_samples; s++) {
-        float re = samples[s * 2];
-        float im = samples[s * 2 + 1];
-        float complex input = re + im * I;
+        float complex input = samples[s * 2] + samples[s * 2 + 1] * I;
 
-        for (int c = 0; c < ch->num_channels; c++) {
-            channel_state_t *cs = &ch->channels[c];
-            if (!cs->active) continue;
+        for (int b = 0; b < ch->num_bands; b++) {
+            band_state_t *bd = &ch->bands[b];
+            if (!bd->active) continue;
 
-            /* NCO mix to baseband */
-            float complex x = input * cs->nco_current;
-            cs->nco_current *= cs->nco_phasor;
+            /* NCO mix to band center */
+            float complex x = input * bd->nco_current;
+            bd->nco_current *= bd->nco_phasor;
 
-            if (++cs->nco_renorm >= 1024) {
-                cs->nco_renorm = 0;
-                float mag = cabsf(cs->nco_current);
+            if (++bd->nco_renorm >= 1024) {
+                bd->nco_renorm = 0;
+                float mag = cabsf(bd->nco_current);
                 if (mag > 0.0f)
-                    cs->nco_current /= mag;
+                    bd->nco_current /= mag;
             }
 
-            /* Cascade through decimation stages */
+            /* Stage-1 decimation cascade */
             int produced = 1;
-            for (int i = 0; i < cs->num_stages && produced; i++) {
+            for (int i = 0; i < bd->num_stages && produced; i++) {
                 float complex out;
-                produced = decim_stage_process(&cs->stages[i], x, &out);
+                produced = decim_stage_process(&bd->stages[i], x, &out);
                 x = out;
             }
             if (!produced) continue;
 
-            /* Apply cleanup filter if active.
-             * Double-buffer: write sample at [idx] AND [idx+NTAPS] so a
-             * contiguous NTAPS-sample window starting at idx+1 (or
-             * wrapped) is always flat in memory. Then call simd_fir_ccf
-             * with n=1 for one vectorized dot-product. */
-            if (cs->has_cleanup) {
-                cs->cleanup_hist[cs->cleanup_idx] = x;
-                cs->cleanup_hist[cs->cleanup_idx + CLEANUP_FIR_TAPS] = x;
-                cs->cleanup_idx = (cs->cleanup_idx + 1) % CLEANUP_FIR_TAPS;
-
-                /* Window of NTAPS oldest→newest starts at cleanup_idx
-                 * in the double buffer (no wrap needed). */
-                float complex out;
-                simd_fir_ccf(cs->cleanup_taps, CLEANUP_FIR_TAPS,
-                             &cs->cleanup_hist[cs->cleanup_idx], &out, 1);
-                x = out;
-            }
-
-            /* Accumulate output */
-            if (cs->out_len < cs->out_cap)
-                cs->out_buf[cs->out_len++] = x;
+            /* Append to intermediate buffer */
+            if (bd->inter_len < bd->inter_cap)
+                bd->inter_buf[bd->inter_len++] = x;
         }
     }
 
+    /*
+     * Stage 2: drain each band's intermediate buffer through per-channel
+     * NCO + decimation + cleanup filter.
+     */
+    for (int b = 0; b < ch->num_bands; b++) {
+        band_state_t *bd = &ch->bands[b];
+        if (!bd->active || bd->inter_len == 0) continue;
+
+        for (int s = 0; s < bd->inter_len; s++) {
+            float complex isamp = bd->inter_buf[s];
+
+            for (int ci = 0; ci < bd->num_channels; ci++) {
+                int cidx = bd->channel_indices[ci];
+                channel_state_t *cs = &ch->channels[cidx];
+                if (!cs->active) continue;
+
+                /* Stage-2 NCO mix relative to band center */
+                float complex x = isamp * cs->nco_current;
+                cs->nco_current *= cs->nco_phasor;
+
+                if (++cs->nco_renorm >= 1024) {
+                    cs->nco_renorm = 0;
+                    float mag = cabsf(cs->nco_current);
+                    if (mag > 0.0f)
+                        cs->nco_current /= mag;
+                }
+
+                /* Stage-2 decimation cascade */
+                int produced = 1;
+                for (int i = 0; i < cs->num_stages && produced; i++) {
+                    float complex out;
+                    produced = decim_stage_process(&cs->stages[i], x, &out);
+                    x = out;
+                }
+                if (!produced) continue;
+
+                /* Cleanup filter (double-buffer trick, simd_fir_ccf) */
+                if (cs->has_cleanup) {
+                    cs->cleanup_hist[cs->cleanup_idx] = x;
+                    cs->cleanup_hist[cs->cleanup_idx + CLEANUP_FIR_TAPS] = x;
+                    cs->cleanup_idx = (cs->cleanup_idx + 1) % CLEANUP_FIR_TAPS;
+
+                    float complex out;
+                    simd_fir_ccf(cs->cleanup_taps, CLEANUP_FIR_TAPS,
+                                 &cs->cleanup_hist[cs->cleanup_idx], &out, 1);
+                    x = out;
+                }
+
+                /* Accumulate output */
+                if (cs->out_len < cs->out_cap)
+                    cs->out_buf[cs->out_len++] = x;
+            }
+        }
+
+        bd->inter_len = 0;
+    }
+
     /* Flush output buffers */
-    int flush_threshold = 32;  /* lowered for low-rate channels */
+    int flush_threshold = 32;
     for (int c = 0; c < ch->num_channels; c++) {
         channel_state_t *cs = &ch->channels[c];
         if (cs->out_len >= flush_threshold) {
@@ -343,11 +598,7 @@ void channelizer_process_i8(channelizer_t *ch, const int8_t *samples,
         int n = num_samples - off;
         if (n > block) n = block;
 
-        /* SIMD-accelerated int8 IQ → float complex conversion.
-         * simd_convert_i8_cf is wired by simd_init() to the best
-         * available path (AVX2 / SSE4.2 / NEON / scalar). */
         simd_convert_i8_cf(samples + off * 2, cbuf, n);
-
         channelizer_process(ch, (float *)cbuf, n);
     }
 }
@@ -355,7 +606,9 @@ void channelizer_process_i8(channelizer_t *ch, const int8_t *samples,
 int channelizer_has_freq(channelizer_t *ch, double freq, double tolerance) {
     if (!ch) return 0;
     for (int c = 0; c < ch->num_channels; c++) {
-        double ch_freq = ch->center_freq + ch->channels[c].nco_freq;
+        int bidx = ch->channels[c].band_idx;
+        double ch_freq = ch->bands[bidx].center_freq
+                       + ch->channels[c].nco_freq;
         if (fabs(ch_freq - freq) < tolerance)
             return 1;
     }
@@ -364,29 +617,33 @@ int channelizer_has_freq(channelizer_t *ch, double freq, double tolerance) {
 
 double channelizer_output_rate(channelizer_t *ch, int channel_id) {
     for (int c = 0; c < ch->num_channels; c++) {
-        if (ch->channels[c].channel_id == channel_id) {
-            double rate = ch->samp_rate;
-            for (int i = 0; i < ch->channels[c].num_stages; i++)
-                rate /= ch->channels[c].stages[i].decimation;
-            return rate;
-        }
+        if (ch->channels[c].channel_id != channel_id) continue;
+        channel_state_t *cs = &ch->channels[c];
+        double rate = ch->bands[cs->band_idx].intermediate_rate;
+        for (int i = 0; i < cs->num_stages; i++)
+            rate /= cs->stages[i].decimation;
+        return rate;
     }
     return 0;
 }
 
 void channelizer_adjust_center(channelizer_t *ch, double offset_hz) {
     if (!ch) return;
-    /* Shift all NCO frequencies by offset_hz to correct PPM error.
-     * This re-centers all channels so the signal lands at DC. */
-    for (int c = 0; c < ch->num_channels; c++) {
-        channel_state_t *cs = &ch->channels[c];
-        cs->nco_freq += offset_hz;
-        double phase_inc = -2.0 * M_PI * cs->nco_freq / ch->samp_rate;
-        cs->nco_phasor = cosf((float)phase_inc) + sinf((float)phase_inc) * I;
-        /* Keep current phase, just change the rate */
+
+    /* Adjust band NCOs; channel NCOs are relative to band center so
+     * they stay unchanged. */
+    for (int b = 0; b < ch->num_bands; b++) {
+        band_state_t *bd = &ch->bands[b];
+        if (!bd->active) continue;
+        bd->nco_freq += offset_hz;
+        double phase_inc = -2.0 * M_PI * bd->nco_freq / ch->samp_rate;
+        bd->nco_phasor  = cosf((float)phase_inc) + sinf((float)phase_inc) * I;
+        /* Keep current phase — just change the rate */
     }
+
     ch->center_freq -= offset_hz;
-    fprintf(stderr, "Channelizer: adjusted center by %.0f Hz (new: %.3f MHz)\n",
+    fprintf(stderr,
+            "Channelizer: adjusted center by %.0f Hz (new: %.3f MHz)\n",
             offset_hz, ch->center_freq / 1e6);
 }
 
@@ -395,5 +652,9 @@ void channelizer_destroy(channelizer_t *ch) {
 
     for (int c = 0; c < ch->num_channels; c++)
         free(ch->channels[c].out_buf);
+
+    for (int b = 0; b < ch->num_bands; b++)
+        free(ch->bands[b].inter_buf);
+
     free(ch);
 }
