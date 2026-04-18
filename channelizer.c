@@ -180,7 +180,7 @@ static double signal_bandwidth(channel_type_t type) {
     case CHAN_AERO_600:   return 6000.0;    /* ±3 kHz cleanup */
     case CHAN_AERO_1200:  return 6000.0;
     case CHAN_AERO_10500: return 15000.0;   /* OQPSK wider signal */
-    case CHAN_AERO_8400:  return 10000.0;   /* matches SDRReceiver */
+    case CHAN_AERO_8400:  return 14000.0;   /* 8400 baud OQPSK α=0.6 needs ±6720 Hz */
     default: return 0;                      /* 0 = use default anti-alias */
     }
 }
