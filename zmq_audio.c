@@ -23,12 +23,12 @@
 #endif
 
 #define MAX_ZMQ_CHANNELS 32
-#define AUDIO_CENTER_HZ  1000.0
 
 typedef struct {
     void *socket;
     double mixer_phase;
     double mixer_inc;
+    double audio_center;
     int active;
     int channel_id;
     char topic[32];
@@ -60,7 +60,7 @@ int zmq_audio_init(int base_port)
     return 0;
 }
 
-static zmq_chan_t *get_channel(int channel_id, double samp_rate)
+static zmq_chan_t *get_channel(int channel_id, double samp_rate, double audio_center_hz)
 {
     for (int i = 0; i < num_channels; i++) {
         if (channels[i].channel_id == channel_id)
@@ -71,22 +71,25 @@ static zmq_chan_t *get_channel(int channel_id, double samp_rate)
 
     zmq_chan_t *ch = &channels[num_channels++];
     ch->channel_id = channel_id;
+    ch->audio_center = audio_center_hz;
     ch->mixer_phase = 0;
-    ch->mixer_inc = 2.0 * M_PI * AUDIO_CENTER_HZ / samp_rate;
+    ch->mixer_inc = 2.0 * M_PI * audio_center_hz / samp_rate;
     ch->active = 1;
     ch->socket = zmq_pub;  /* all channels share one socket */
     snprintf(ch->topic, sizeof(ch->topic), "VFO%02d", channel_id);
-    fprintf(stderr, "ZMQ: channel %d topic=%s\n", channel_id, ch->topic);
+    fprintf(stderr, "ZMQ: channel %d topic=%s audio_center=%.0f Hz\n",
+            channel_id, ch->topic, audio_center_hz);
     return ch;
 }
 
 void zmq_audio_send(int channel_id, const float complex *samples,
-                     int num_samples, double samp_rate)
+                     int num_samples, double samp_rate,
+                     double audio_center_hz)
 {
-    zmq_chan_t *ch = get_channel(channel_id, samp_rate);
+    zmq_chan_t *ch = get_channel(channel_id, samp_rate, audio_center_hz);
     if (!ch || !ch->socket) return;
 
-    /* Convert complex baseband to real audio at 1000 Hz center */
+    /* Convert complex baseband to real audio at audio_center_hz */
     int16_t *pcm = malloc(num_samples * sizeof(int16_t));
     if (!pcm) return;
 

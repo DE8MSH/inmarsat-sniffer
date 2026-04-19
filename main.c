@@ -911,8 +911,13 @@ static void channel_output_cb(int channel_id, channel_type_t type,
 #ifdef HAVE_ZMQ
     if (zmq_enabled) {
         double output_rate = channelizer_output_rate(channelizer, channel_id);
+        /* Per-baud JAERO default audio center: 1000 Hz for MSK, 8000 Hz for OQPSK.
+         * This makes our ZMQ output match what JAERO expects by default for each
+         * modulation type (matches SDRReceiver-to-JAERO wiring conventions). */
+        double audio_center = (type == CHAN_AERO_10500 ||
+                                type == CHAN_AERO_8400) ? 8000.0 : 1000.0;
         if (output_rate > 0)
-            zmq_audio_send(channel_id, samples, num_samples, output_rate);
+            zmq_audio_send(channel_id, samples, num_samples, output_rate, audio_center);
     }
 #endif
 
