@@ -22,6 +22,9 @@ MskDemodulator::MskDemodulator()
 {
     soft_bits_cb = NULL;
     soft_bits_user = NULL;
+    sigstat_cb = NULL;
+    sigstat_user = NULL;
+    sigstat_last = true;
 
     afc = false;
     sql = false;
@@ -244,6 +247,15 @@ void MskDemodulator::FreqOffsetEstimateSlot(double freq_offset_est)
                 bbcycbuff[j] = cpx_type(0, 0);
         }
     } else countdown = 4;
+
+    /* Signal status edge callback — matches JAERO's SignalStatus signal */
+    if (sigstat_cb) {
+        bool good = (mse < signalthreshold);
+        if (good != sigstat_last) {
+            sigstat_cb(good, sigstat_user);
+            sigstat_last = good;
+        }
+    }
 }
 
 /* ORIGINAL JAERO processAudio — monolithic, unmodified. Operates on int16

@@ -293,6 +293,13 @@ static void pmsk_acars_adapter(ACARSItem &acarsitem, void *ctx)
     }
 }
 
+static void pmsk_sigstat_adapter(bool signal_good, void *ctx)
+{
+    jaero_pmsk_demod_t *d = (jaero_pmsk_demod_t *)ctx;
+    if (!signal_good && d->aerol)
+        d->aerol->LostSignal();
+}
+
 jaero_pmsk_demod_t *jaero_pmsk_create(double sample_rate, double symbol_rate,
                                        int channel_id,
                                        jaero_soft_bits_cb cb, void *user)
@@ -323,6 +330,7 @@ jaero_pmsk_demod_t *jaero_pmsk_create(double sample_rate, double symbol_rate,
 
     d->demod->setSettings(s);
     d->demod->setSoftBitsCallback(pmsk_bits_adapter, d);
+    d->demod->setSignalStatusCallback(pmsk_sigstat_adapter, d);
     d->demod->setAFC(true);  /* on by default in JAERO GUI */
 
     return d;
