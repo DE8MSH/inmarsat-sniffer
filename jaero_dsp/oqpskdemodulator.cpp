@@ -29,6 +29,9 @@ OqpskDemodulator::OqpskDemodulator()
 {
     soft_bits_cb   = NULL;
     soft_bits_user = NULL;
+    sigstat_cb     = NULL;
+    sigstat_user   = NULL;
+    sigstat_last   = true;
 
     afc  = false;
     sql  = false;
@@ -289,6 +292,17 @@ void OqpskDemodulator::FreqOffsetEstimateSlot(double freq_offset_est)
                 bbcycbuff[j] = cpx_type(0, 0);
         }
     } else freqest_countdown = 4;
+
+    /* Signal status callback — matches JAERO's SignalStatus signal.
+     * Only fires on edge transitions (good->bad or bad->good) to avoid
+     * spamming AeroL with redundant resets. */
+    if (sigstat_cb) {
+        bool good = (mse < signalthreshold);
+        if (good != sigstat_last) {
+            sigstat_cb(good, sigstat_user);
+            sigstat_last = good;
+        }
+    }
 }
 
 /* ORIGINAL JAERO OqpskDemodulator::writeData() DSP path — identical math,

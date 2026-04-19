@@ -413,6 +413,17 @@ static void oqpsk_cont_bits_adapter(const short *bits, int num_bits, void *ctx)
     }
 }
 
+/* Signal status callback: reset AeroL when OQPSK demod loses lock.
+ * Matches JAERO's SignalStatus→LostSignal connection. Without this,
+ * AeroL accumulates noise bits during signal dropouts and gets stuck
+ * searching for frame sync in garbage. */
+static void oqpsk_cont_sigstat_adapter(bool signal_good, void *ctx)
+{
+    jaero_oqpsk_cont_demod_t *d = (jaero_oqpsk_cont_demod_t *)ctx;
+    if (!signal_good && d->aerol)
+        d->aerol->LostSignal();
+}
+
 jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double symbol_rate,
                                                     int channel_id,
                                                     jaero_soft_bits_cb cb, void *user)
@@ -443,6 +454,7 @@ jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double sym
 
     d->demod->setSettings(s);
     d->demod->setSoftBitsCallback(oqpsk_cont_bits_adapter, d);
+    d->demod->setSignalStatusCallback(oqpsk_cont_sigstat_adapter, d);
     d->demod->setAFC(true);  /* on by default in JAERO GUI */
 
     return d;
