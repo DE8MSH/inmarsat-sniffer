@@ -6,7 +6,7 @@ Supports HackRF, BladeRF, USRP (UHD), RTL-SDR, SDRplay (native API v3), and any 
 
 The Aero decode chain uses JAERO's proven DSP code (MskDemodulator, BurstOqpskDemodulator, AeroL) ported from [jontio/JAERO](https://github.com/jontio/JAERO), Qt-stripped to pure C++. When [libacars-2](https://github.com/szpajder/libacars) is installed, ARINC-622 application payloads (ADS-C position reports, CPDLC controller-pilot messages) are fully decoded and reassembled.
 
-Sister project to [iridium-sniffer](https://github.com/DE8MSH/iridium-sniffer) for Iridium L-band.
+Sister project to [iridium-sniffer](https://github.com/alphafox02/iridium-sniffer) for Iridium L-band.
 
 ## Features
 
