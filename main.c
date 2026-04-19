@@ -1201,15 +1201,17 @@ int main(int argc, char **argv) {
              *   HackRF:  6 MHz (HackRF's wider fixed IF means low rates alias
              *            noise — 6 MHz is near its native sweet spot)
              *   Others:  2.4 MHz floor */
-            double min_rate;
-            if (rtl_dev_index >= 0)
-                min_rate = 1536000;
-            else if (sdrplay_serial != NULL)
-                min_rate = 3072000;
-            else if (hackrf_serial != NULL)
-                min_rate = 6000000;
-            else
-                min_rate = 2400000;
+            double min_rate = 2400000;
+#ifdef HAVE_RTLSDR
+            if (rtl_dev_index >= 0) min_rate = 1536000; else
+#endif
+#ifdef HAVE_SDRPLAY
+            if (sdrplay_serial != NULL) min_rate = 3072000; else
+#endif
+#ifdef HAVE_HACKRF
+            if (hackrf_serial != NULL) min_rate = 6000000; else
+#endif
+            { /* default 2400000 */ }
             if (samp_rate < min_rate)
                 samp_rate = min_rate;
             if (verbose)
@@ -1218,10 +1220,16 @@ int main(int argc, char **argv) {
     }
 
     if (samp_rate == 0) {
-        if (rtl_dev_index >= 0)           samp_rate = 1536000;
-        else if (sdrplay_serial != NULL)  samp_rate = 3072000;
-        else if (hackrf_serial != NULL)   samp_rate = 6000000;
-        else                              samp_rate = 2400000;
+        samp_rate = 2400000;
+#ifdef HAVE_RTLSDR
+        if (rtl_dev_index >= 0) samp_rate = 1536000;
+#endif
+#ifdef HAVE_SDRPLAY
+        if (sdrplay_serial != NULL) samp_rate = 3072000;
+#endif
+#ifdef HAVE_HACKRF
+        if (hackrf_serial != NULL) samp_rate = 6000000;
+#endif
     }
     if (center_freq == 0)
         center_freq = 1545100000.0;
