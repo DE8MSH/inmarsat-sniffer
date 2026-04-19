@@ -732,8 +732,8 @@ void channelizer_finalize(channelizer_t *ch) {
         }
 
         fprintf(stderr,
-                "Channelizer: band %d rebalanced  center=%.3f MHz  "
-                "cluster=[%.3f..%.3f] MHz\n",
+                "Channelizer: band %d NCO centered at %.3f MHz "
+                "(mix point only; channels remain at their spec frequencies %.3f-%.3f MHz)\n",
                 b, centroid / 1e6, freq_lo / 1e6, freq_hi / 1e6);
     }
 }
