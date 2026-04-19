@@ -300,14 +300,6 @@ static void pmsk_sigstat_adapter(bool signal_good, void *ctx)
         d->aerol->LostSignal();
 }
 
-/* AeroL Data Carrier Detect → demod: tells the demod when frame sync is
- * achieved. Demod uses dcd to gate aggressive AFC adjustments. */
-static void pmsk_dcd_adapter(bool dcd_status, void *ctx)
-{
-    jaero_pmsk_demod_t *d = (jaero_pmsk_demod_t *)ctx;
-    if (d->demod) d->demod->DCDstatSlot(dcd_status);
-}
-
 jaero_pmsk_demod_t *jaero_pmsk_create(double sample_rate, double symbol_rate,
                                        int channel_id,
                                        jaero_soft_bits_cb cb, void *user)
@@ -340,10 +332,6 @@ jaero_pmsk_demod_t *jaero_pmsk_create(double sample_rate, double symbol_rate,
     d->demod->setSoftBitsCallback(pmsk_bits_adapter, d);
     d->demod->setSignalStatusCallback(pmsk_sigstat_adapter, d);
     d->demod->setAFC(true);  /* on by default in JAERO GUI */
-
-    /* AeroL DCD → demod dcd flag (JAERO wires this too) */
-    if (d->aerol)
-        d->aerol->setDCDCallback(pmsk_dcd_adapter, d);
 
     return d;
 }
@@ -444,12 +432,6 @@ static void oqpsk_cont_sigstat_adapter(bool signal_good, void *ctx)
         d->aerol->LostSignal();
 }
 
-static void oqpsk_cont_dcd_adapter(bool dcd_status, void *ctx)
-{
-    jaero_oqpsk_cont_demod_t *d = (jaero_oqpsk_cont_demod_t *)ctx;
-    if (d->demod) d->demod->DCDstatSlot(dcd_status);
-}
-
 jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double symbol_rate,
                                                     int channel_id,
                                                     jaero_soft_bits_cb cb, void *user)
@@ -482,10 +464,6 @@ jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double sym
     d->demod->setSoftBitsCallback(oqpsk_cont_bits_adapter, d);
     d->demod->setSignalStatusCallback(oqpsk_cont_sigstat_adapter, d);
     d->demod->setAFC(true);  /* on by default in JAERO GUI */
-
-    /* AeroL DCD → demod dcd flag (JAERO wires this too) */
-    if (d->aerol)
-        d->aerol->setDCDCallback(oqpsk_cont_dcd_adapter, d);
 
     return d;
 }
