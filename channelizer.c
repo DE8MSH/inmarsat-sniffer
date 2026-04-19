@@ -292,8 +292,8 @@ static double signal_bandwidth(channel_type_t type) {
     case CHAN_STDC_EGC:   return 4800.0;
     case CHAN_AERO_600:   return 6000.0;
     case CHAN_AERO_1200:  return 6000.0;
-    case CHAN_AERO_10500: return 15000.0;
-    case CHAN_AERO_8400:  return 14000.0;
+    case CHAN_AERO_10500: return 21000.0;  /* α=1.0 → fb*(1+α) = 21 kHz */
+    case CHAN_AERO_8400:  return 14000.0;   /* α=0.6 → fb*(1+α) = 13.4 kHz */
     default: return 0;
     }
 }
