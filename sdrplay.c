@@ -1,413 +1,241 @@
 /*
- * SDRplay native API v3 backend for inmarsat-sniffer
- *
- * Bypasses SoapySDR to talk directly to the SDRplay API, fixing
- * device-specific issues (RSP1A bias tee segfault, etc.) and giving
- * full control over per-model settings.
+ * Built-in satellite channel frequency tables
  *
  * Copyright (c) 2026 CEMAXECUTER LLC
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#include <err.h>
-#include <math.h>
-#include <pthread.h>
-#include <signal.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
-#include <unistd.h>
+#include <strings.h>
 
-#include <sdrplay_api.h>
+#include "satellites.h"
 
-#include "sdr.h"
+/*
+ * Channel tables for known Inmarsat satellites.
+ * Frequencies are from publicly available L-band surveys.
+ * These are relatively static -- Inmarsat rarely changes allocations.
+ *
+ * Aero channel frequencies for 4F3 (98W, AORW) are well-documented.
+ * Other satellites have partial tables -- will be filled in as data
+ * becomes available.
+ */
 
-extern sig_atomic_t running;
-extern pid_t self_pid;
-extern double samp_rate;
-extern double center_freq;
-extern int sdrplay_gain_val;
-extern int bias_tee;
-extern int verbose;
+/* I4-F3 (98W, AORW) -- Americas region
+ * Frequencies from SDRReceiver 98W config (verified against live signals). */
+static const channel_def_t channels_4f3[] = {
+    /* STD-C EGC (NCS common) -- channel 0 by convention */
+    { 1537103850.0, CHAN_STDC_EGC,   0 },
 
-/* Driver context passed between setup/stream/close */
-typedef struct {
-    sdrplay_api_DeviceT device;
-    sdrplay_api_DeviceParamsT *params;
-    int opened;       /* API opened */
-    int selected;     /* device selected */
-    int initialized;  /* streaming init'd */
-} sdrplay_ctx_t;
+    /* Aero 600 baud channels */
+    { 1545117860.0, CHAN_AERO_600,  1 },
+    { 1545122890.0, CHAN_AERO_600,  2 },
+    { 1545127910.0, CHAN_AERO_1200, 3 },
+    { 1545132890.0, CHAN_AERO_600,  4 },
 
-/* Select the best bandwidth enum for a given sample rate */
-static sdrplay_api_Bw_MHzT pick_bandwidth(double sr)
-{
-    if (sr <= 300000)  return sdrplay_api_BW_0_300;
-    if (sr <= 600000)  return sdrplay_api_BW_0_600;
-    if (sr <= 1536000) return sdrplay_api_BW_1_536;
-    if (sr <= 5000000) return sdrplay_api_BW_5_000;
-    if (sr <= 6000000) return sdrplay_api_BW_6_000;
-    if (sr <= 7000000) return sdrplay_api_BW_7_000;
-    return sdrplay_api_BW_8_000;
-}
+  /*
+    { 1545021000.0, CHAN_AERO_600,  1 },
+    { 1545051000.0, CHAN_AERO_600,  2 },
+    { 1545061000.0, CHAN_AERO_600,  3 },
+    { 1545066000.0, CHAN_AERO_600,  4 },
+    { 1545081000.0, CHAN_AERO_600,  5 },
+    { 1545086000.0, CHAN_AERO_600,  6 },
+    { 1545091000.0, CHAN_AERO_600,  7 },
+    { 1545101000.0, CHAN_AERO_600,  8 },
+    { 1545111000.0, CHAN_AERO_600,  9 },
+    { 1545171000.0, CHAN_AERO_600, 10 },
+    { 1545176000.0, CHAN_AERO_600, 11 },
+*/
+    /* Aero 1200 baud channels */
+//    { 1545076000.0, CHAN_AERO_1200, 12 },
 
-/* ---- Stream callback ---- */
-static void stream_callback(short *xi, short *xq,
-                             sdrplay_api_StreamCbParamsT *params,
-                             unsigned int numSamples,
-                             unsigned int reset, void *cbContext)
-{
-    (void)params;
-    (void)reset;
-    (void)cbContext;
 
-    if (!running || numSamples == 0)
-        return;
+    /* Aero 10500 baud channels      */
+ // { 1545492870.0, CHAN_AERO_10500, 13 },
+ //  { 1545952770.0, CHAN_AERO_10500, 14 },
 
-    /* Allocate float IQ buffer: 2 floats per sample */
-    sample_buf_t *s = malloc(sizeof(*s) + numSamples * sizeof(float) * 2);
-    if (!s) return;
 
-    s->format = SAMPLE_FMT_FLOAT;
-    s->hw_timestamp_ns = 0;
-    s->num = numSamples;
+    
+  
+//  { 1546010000.0, CHAN_AERO_10500, 14 }, */
+//  { 1546313970.0, CHAN_AERO_10500, 15 },
+//  { 1546070000.0, CHAN_AERO_10500, 16 },
 
-    float *out = (float *)s->samples;
+    /* Aero 8400 baud (C-channel, voice + data) 
+        { 1546146830.0, CHAN_AERO_8400, 16 },
+        { 1546146600.0, CHAN_AERO_8400, 17 },
+        { 1546154360.0, CHAN_AERO_8400, 18 },
+        { 1546156530.0, CHAN_AERO_8400, 18 },
+*/
+/* { 1546140500.0, CHAN_AERO_8400, 18 },
+    { 1546145700.0, CHAN_AERO_8400, 19 },
+    { 1546150300.0, CHAN_AERO_8400, 20 },
+    { 1546155500.0, CHAN_AERO_8400, 21 },
+    { 1546160600.0, CHAN_AERO_8400, 22 },
+    { 1546166300.0, CHAN_AERO_8400, 23 },
+    { 1546171430.0, CHAN_AERO_8400, 24 },
+    { 1546176430.0, CHAN_AERO_8400, 25 },
+    { 1546181430.0, CHAN_AERO_8400, 26 },
+    { 1546186430.0, CHAN_AERO_8400, 27 },
+    */
+};
 
-    /* Interleave separate I/Q int16 arrays and normalize */
-    for (unsigned int i = 0; i < numSamples; i++) {
-        out[i * 2]     = xi[i] * (1.0f / 32768.0f);
-        out[i * 2 + 1] = xq[i] * (1.0f / 32768.0f);
+/* I3-F5 (54W, AORE) -- Atlantic East
+ * Frequencies from SDRReceiver 54W config. */
+static const channel_def_t channels_3f5[] = {
+    { 1541450000.0, CHAN_STDC_EGC,   0 },
+
+    /* Aero 600 baud channels */
+    { 1545014429.0, CHAN_AERO_600,  1 },
+    { 1545029412.0, CHAN_AERO_600,  2 },
+    { 1545134635.0, CHAN_AERO_600,  3 },
+    { 1545194731.0, CHAN_AERO_600,  4 },
+
+    /* Aero 10500 baud channels */
+    { 1546045422.0, CHAN_AERO_10500, 5 },
+    { 1546061717.0, CHAN_AERO_10500, 6 },
+
+    /* Aero 8400 baud channels */
+    { 1546817935.0, CHAN_AERO_8400,  7 },
+    { 1546823426.0, CHAN_AERO_8400,  8 },
+    { 1546828110.0, CHAN_AERO_8400,  9 },
+    { 1546833112.0, CHAN_AERO_8400, 10 },
+    { 1546838105.0, CHAN_AERO_8400, 11 },
+    { 1546842770.0, CHAN_AERO_8400, 12 },
+    { 1546848155.0, CHAN_AERO_8400, 13 },
+    { 1546853237.0, CHAN_AERO_8400, 14 },
+};
+
+/* I4-AF1 (25E, IOR) -- Indian Ocean
+ * Frequencies from SDRReceiver 25E config. */
+static const channel_def_t channels_af1[] = {
+    { 1537950000.0, CHAN_STDC_EGC,   0 },
+
+    /* Aero 600 baud channels */
+    { 1545005146.0, CHAN_AERO_600,  1 },
+    { 1545214573.0, CHAN_AERO_600,  2 },
+    { 1545219706.0, CHAN_AERO_600,  3 },
+    { 1545224996.0, CHAN_AERO_600,  4 },
+    { 1545114134.0, CHAN_AERO_600,  5 },
+    { 1545119063.0, CHAN_AERO_600,  6 },
+    { 1545129563.0, CHAN_AERO_600,  7 },
+    { 1545159288.0, CHAN_AERO_600,  8 },
+    { 1545164682.0, CHAN_AERO_600,  9 },
+    { 1545183905.0, CHAN_AERO_600, 10 },
+    { 1545189244.0, CHAN_AERO_600, 11 },
+
+    /* Aero 1200 baud channels */
+    { 1545124261.0, CHAN_AERO_1200, 12 },
+
+    /* Aero 10500 baud channels */
+    { 1546005300.0, CHAN_AERO_10500, 13 },
+    { 1546019800.0, CHAN_AERO_10500, 14 },
+    { 1546034700.0, CHAN_AERO_10500, 15 },
+    { 1546084600.0, CHAN_AERO_10500, 16 },
+    { 1546099900.0, CHAN_AERO_10500, 17 },
+    { 1546114200.0, CHAN_AERO_10500, 18 },
+
+    /* Aero 8400 baud channels */
+    { 1546137300.0, CHAN_AERO_8400, 19 },
+    { 1546142500.0, CHAN_AERO_8400, 20 },
+    { 1546147700.0, CHAN_AERO_8400, 21 },
+    { 1546152300.0, CHAN_AERO_8400, 22 },
+    { 1546157500.0, CHAN_AERO_8400, 23 },
+    { 1546162600.0, CHAN_AERO_8400, 24 },
+    { 1546168300.0, CHAN_AERO_8400, 25 },
+    { 1546173430.0, CHAN_AERO_8400, 26 },
+    { 1546178430.0, CHAN_AERO_8400, 27 },
+};
+
+/* I4-F1 (143.5E, POR) -- Pacific Ocean
+ * TODO: no SDRReceiver config available, needs verification */
+static const channel_def_t channels_f1[] = {
+    { 1541450000.0, CHAN_STDC_EGC,   0 },
+    { 1545100000.0, CHAN_AERO_600,  1 },
+    { 1546050000.0, CHAN_AERO_10500, 2 },
+    { 1546150000.0, CHAN_AERO_8400, 3 },
+};
+
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
+static const satellite_t satellites[] = {
+    {
+        .name = "I4-F3",
+        .designator = "4F3",
+        .position = -98.0,
+        .region = "AORW",
+        /* STD-C NCS is on a different sub-band (~1537 MHz). --mode=full
+         * covers both; Aero-only modes ignore this. */
+        .stdc_egc_freq = 1537103600.0,
+        .channels = channels_4f3,
+        .num_channels = ARRAY_SIZE(channels_4f3),
+        .freq_min = 1536200000.0,
+        .freq_max = 1546186430.0,
+    },
+    {
+        .name = "I3-F5",
+        .designator = "3F5",
+        .position = -54.0,
+        .region = "AORE",
+        .stdc_egc_freq = 1541450000.0,
+        .channels = channels_3f5,
+        .num_channels = ARRAY_SIZE(channels_3f5),
+        .freq_min = 1541450000.0,
+        .freq_max = 1546853237.0,
+    },
+    {
+        .name = "I4-AF1",
+        .designator = "AF1",
+        .position = 25.0,
+        .region = "IOR",
+        .stdc_egc_freq = 1537950000.0,
+        .channels = channels_af1,
+        .num_channels = ARRAY_SIZE(channels_af1),
+        .freq_min = 1537950000.0,
+        .freq_max = 1546178430.0,
+    },
+    {
+        .name = "I4-F1",
+        .designator = "F1",
+        .position = 143.5,
+        .region = "POR",
+        .stdc_egc_freq = 1541450000.0,
+        .channels = channels_f1,
+        .num_channels = ARRAY_SIZE(channels_f1),
+        .freq_min = 1541450000.0,
+        .freq_max = 1546150000.0,
+    },
+};
+
+const satellite_t *satellite_lookup(const char *designator) {
+    for (size_t i = 0; i < ARRAY_SIZE(satellites); i++) {
+        if (strcasecmp(satellites[i].designator, designator) == 0)
+            return &satellites[i];
     }
-
-    push_samples(s);
-}
-
-/* ---- Event callback ---- */
-static void event_callback(sdrplay_api_EventT eventId,
-                            sdrplay_api_TunerSelectT tuner,
-                            sdrplay_api_EventParamsT *params,
-                            void *cbContext)
-{
-    (void)tuner;
-    (void)cbContext;
-
-    switch (eventId) {
-    case sdrplay_api_GainChange:
-        if (verbose)
-            fprintf(stderr, "sdrplay: gain change: gRdB=%u lnaGRdB=%u "
-                    "currGain=%.1f\n",
-                    params->gainParams.gRdB,
-                    params->gainParams.lnaGRdB,
-                    params->gainParams.currGain);
-        break;
-
-    case sdrplay_api_PowerOverloadChange:
-        if (cbContext) {
-            sdrplay_ctx_t *ctx = (sdrplay_ctx_t *)cbContext;
-            sdrplay_api_Update(ctx->device.dev, tuner,
-                               sdrplay_api_Update_Ctrl_OverloadMsgAck,
-                               sdrplay_api_Update_Ext1_None);
-        }
-        if (verbose) {
-            const char *msg =
-                (params->powerOverloadParams.powerOverloadChangeType ==
-                 sdrplay_api_Overload_Detected) ? "detected" : "corrected";
-            fprintf(stderr, "sdrplay: power overload %s\n", msg);
-        }
-        break;
-
-    case sdrplay_api_DeviceRemoved:
-        warnx("sdrplay: device removed");
-        running = 0;
-        kill(self_pid, SIGINT);
-        break;
-
-#ifdef sdrplay_api_DeviceFailure
-    case sdrplay_api_DeviceFailure:
-        warnx("sdrplay: device failure");
-        running = 0;
-        kill(self_pid, SIGINT);
-        break;
-#endif
-
-    default:
-        break;
-    }
-}
-
-/* ---- Device enumeration ---- */
-void sdrplay_list(void)
-{
-    sdrplay_api_ErrT err;
-    float ver = 0.0f;
-
-    err = sdrplay_api_Open();
-    if (err != sdrplay_api_Success) {
-        warnx("sdrplay: cannot open API: %s",
-              sdrplay_api_GetErrorString(err));
-        return;
-    }
-
-    err = sdrplay_api_ApiVersion(&ver);
-    if (err != sdrplay_api_Success) {
-        sdrplay_api_Close();
-        return;
-    }
-
-    sdrplay_api_DeviceT devices[SDRPLAY_MAX_DEVICES];
-    unsigned int ndevs = 0;
-
-    err = sdrplay_api_LockDeviceApi();
-    if (err != sdrplay_api_Success) {
-        sdrplay_api_Close();
-        return;
-    }
-
-    err = sdrplay_api_GetDevices(devices, &ndevs, SDRPLAY_MAX_DEVICES);
-    if (err != sdrplay_api_Success || ndevs == 0) {
-        sdrplay_api_UnlockDeviceApi();
-        sdrplay_api_Close();
-        return;
-    }
-
-    for (unsigned int i = 0; i < ndevs; i++) {
-        const char *model;
-        switch (devices[i].hwVer) {
-        case SDRPLAY_RSP1_ID:    model = "RSP1";    break;
-        case SDRPLAY_RSP1A_ID:   model = "RSP1A";   break;
-#ifdef SDRPLAY_RSP1B_ID
-        case SDRPLAY_RSP1B_ID:   model = "RSP1B";   break;
-#endif
-        case SDRPLAY_RSP2_ID:    model = "RSP2";     break;
-        case SDRPLAY_RSPduo_ID:  model = "RSPduo";   break;
-        case SDRPLAY_RSPdx_ID:   model = "RSPdx";    break;
-#ifdef SDRPLAY_RSPdxR2_ID
-        case SDRPLAY_RSPdxR2_ID: model = "RSPdxR2";  break;
-#endif
-        default:                 model = "Unknown";  break;
-        }
-        {
-            char val[64];
-            snprintf(val, sizeof(val), "sdrplay-%s", devices[i].SerNo);
-            printf("  %-24s SDRplay %s\n", val, model);
-        }
-    }
-
-    sdrplay_api_UnlockDeviceApi();
-    sdrplay_api_Close();
-}
-
-/* ---- Device setup ---- */
-void *sdrplay_setup(const char *serial)
-{
-    sdrplay_api_ErrT err;
-    float ver = 0.0f;
-
-    sdrplay_ctx_t *ctx = calloc(1, sizeof(*ctx));
-    if (!ctx) errx(1, "sdrplay: out of memory");
-
-    err = sdrplay_api_Open();
-    if (err != sdrplay_api_Success)
-        errx(1, "sdrplay: cannot open API: %s",
-             sdrplay_api_GetErrorString(err));
-    ctx->opened = 1;
-
-    err = sdrplay_api_ApiVersion(&ver);
-    if (err != sdrplay_api_Success)
-        errx(1, "sdrplay: cannot get API version: %s",
-             sdrplay_api_GetErrorString(err));
-    fprintf(stderr, "sdrplay: API version %.2f\n", ver);
-    if (ver < 3.07f)
-        warnx("sdrplay: API version %.2f is too old (minimum 3.07)", ver);
-    else if (ver < 3.14f)
-        warnx("sdrplay: API version %.2f -- consider upgrading to 3.14+ "
-              "for RSP1B/RSPdxR2 support", ver);
-
-    sdrplay_api_DeviceT devices[SDRPLAY_MAX_DEVICES];
-    unsigned int ndevs = 0;
-
-    err = sdrplay_api_LockDeviceApi();
-    if (err != sdrplay_api_Success)
-        errx(1, "sdrplay: cannot lock API: %s",
-             sdrplay_api_GetErrorString(err));
-
-    err = sdrplay_api_GetDevices(devices, &ndevs, SDRPLAY_MAX_DEVICES);
-    if (err != sdrplay_api_Success || ndevs == 0)
-        errx(1, "sdrplay: no devices found");
-
-    int found = -1;
-    if (serial && serial[0]) {
-        for (unsigned int i = 0; i < ndevs; i++) {
-            if (strcmp(devices[i].SerNo, serial) == 0) {
-                found = (int)i;
-                break;
-            }
-        }
-        if (found < 0)
-            errx(1, "sdrplay: device with serial '%s' not found", serial);
-    } else {
-        found = 0;
-    }
-
-    ctx->device = devices[found];
-
-    /* RSPduo: force single tuner mode */
-    if (ctx->device.hwVer == SDRPLAY_RSPduo_ID) {
-        ctx->device.tuner = sdrplay_api_Tuner_A;
-        ctx->device.rspDuoMode = sdrplay_api_RspDuoMode_Single_Tuner;
-    }
-
-    err = sdrplay_api_SelectDevice(&ctx->device);
-    if (err != sdrplay_api_Success)
-        errx(1, "sdrplay: cannot select device: %s",
-             sdrplay_api_GetErrorString(err));
-    ctx->selected = 1;
-
-    sdrplay_api_UnlockDeviceApi();
-
-    sdrplay_api_DebugEnable(ctx->device.dev, sdrplay_api_DbgLvl_Verbose);
-
-    err = sdrplay_api_GetDeviceParams(ctx->device.dev, &ctx->params);
-    if (err != sdrplay_api_Success)
-        errx(1, "sdrplay: cannot get device params: %s",
-             sdrplay_api_GetErrorString(err));
-
-    sdrplay_api_DevParamsT *devp = ctx->params->devParams;
-    sdrplay_api_RxChannelParamsT *chp = ctx->params->rxChannelA;
-
-    chp->tunerParams.rfFreq.rfHz = center_freq;
-
-    devp->fsFreq.fsHz = samp_rate;
-    chp->tunerParams.bwType = pick_bandwidth(samp_rate);
-    chp->tunerParams.ifType = sdrplay_api_IF_Zero;
-
-    chp->ctrlParams.dcOffset.DCenable = 1;
-    chp->ctrlParams.dcOffset.IQenable = 1;
-
-    if (sdrplay_gain_val >= 0) {
-        int grdb = sdrplay_gain_val;
-        if (grdb < 20) grdb = 20;
-        if (grdb > 59) grdb = 59;
-        chp->tunerParams.gain.gRdB = grdb;
-        chp->tunerParams.gain.LNAstate = 0;
-        chp->ctrlParams.agc.enable = sdrplay_api_AGC_DISABLE;
-        fprintf(stderr, "sdrplay: AGC disabled, manual gRdB=%d LNA=0\n", grdb);
-    } else {
-        chp->ctrlParams.agc.enable = sdrplay_api_AGC_5HZ;
-        chp->ctrlParams.agc.setPoint_dBfs = -30;
-        fprintf(stderr, "sdrplay: AGC enabled (5 Hz)\n");
-    }
-
-    /* Bias tee -- per-model configuration */
-    if (bias_tee) {
-        switch (ctx->device.hwVer) {
-        case SDRPLAY_RSP1A_ID:
-#ifdef SDRPLAY_RSP1B_ID
-        case SDRPLAY_RSP1B_ID:
-#endif
-            chp->rsp1aTunerParams.biasTEnable = 1;
-            break;
-        case SDRPLAY_RSP2_ID:
-            chp->rsp2TunerParams.antennaSel = sdrplay_api_Rsp2_ANTENNA_B;
-            chp->rsp2TunerParams.biasTEnable = 1;
-            break;
-        case SDRPLAY_RSPduo_ID:
-            chp->rspDuoTunerParams.biasTEnable = 1;
-            break;
-        case SDRPLAY_RSPdx_ID:
-#ifdef SDRPLAY_RSPdxR2_ID
-        case SDRPLAY_RSPdxR2_ID:
-#endif
-            devp->rspDxParams.antennaSel = sdrplay_api_RspDx_ANTENNA_B;
-            devp->rspDxParams.biasTEnable = 1;
-            break;
-        default:
-            warnx("sdrplay: bias tee not supported on this model");
-            break;
-        }
-        fprintf(stderr, "sdrplay: bias tee enabled\n");
-    }
-
-    sdrplay_api_CallbackFnsT cbFns;
-    cbFns.StreamACbFn = stream_callback;
-    cbFns.StreamBCbFn = stream_callback;
-    cbFns.EventCbFn = event_callback;
-
-    err = sdrplay_api_Init(ctx->device.dev, &cbFns, ctx);
-    if (err != sdrplay_api_Success) {
-        sdrplay_api_ErrorInfoT *errInfo =
-            sdrplay_api_GetLastError(NULL);
-        if (errInfo)
-            warnx("sdrplay: Init error detail: %s (file=%s func=%s line=%d)",
-                  errInfo->message, errInfo->file,
-                  errInfo->function, errInfo->line);
-        errx(1, "sdrplay: cannot init device: %s",
-             sdrplay_api_GetErrorString(err));
-    }
-    ctx->initialized = 1;
-
-    sdrplay_api_DebugEnable(ctx->device.dev, sdrplay_api_DbgLvl_Disable);
-
-    const char *model;
-    switch (ctx->device.hwVer) {
-    case SDRPLAY_RSP1_ID:    model = "RSP1";    break;
-    case SDRPLAY_RSP1A_ID:   model = "RSP1A";   break;
-#ifdef SDRPLAY_RSP1B_ID
-    case SDRPLAY_RSP1B_ID:   model = "RSP1B";   break;
-#endif
-    case SDRPLAY_RSP2_ID:    model = "RSP2";     break;
-    case SDRPLAY_RSPduo_ID:  model = "RSPduo";   break;
-    case SDRPLAY_RSPdx_ID:   model = "RSPdx";    break;
-#ifdef SDRPLAY_RSPdxR2_ID
-    case SDRPLAY_RSPdxR2_ID: model = "RSPdxR2";  break;
-#endif
-    default:                 model = "Unknown";  break;
-    }
-    fprintf(stderr, "sdrplay: %s serial=%s sr=%.0f freq=%.0f bw=%d %s\n",
-            model, ctx->device.SerNo, samp_rate, center_freq,
-            (int)chp->tunerParams.bwType,
-            sdrplay_gain_val >= 0 ? "gain=manual" : "gain=AGC");
-
-    return ctx;
-}
-
-/* ---- Streaming thread ---- */
-void *sdrplay_stream_thread(void *arg)
-{
-    (void)arg;
-
-    /* Streaming is already active from Init in setup.
-     * Callbacks deliver samples directly via push_samples().
-     * This thread just blocks until shutdown. */
-    while (running)
-        usleep(100000);
-
-    running = 0;
-    kill(self_pid, SIGINT);
-
     return NULL;
 }
 
-/* ---- Cleanup ---- */
-void sdrplay_close(void *arg)
-{
-    sdrplay_ctx_t *ctx = (sdrplay_ctx_t *)arg;
-    if (!ctx) return;
+void satellite_list(void) {
+    fprintf(stderr, "Known Inmarsat satellites (--satellite=DESIGNATOR):\n\n");
+    fprintf(stderr, "  %-12s %-8s %-6s %-8s %s\n",
+            "Satellite", "Pos", "Region", "Channels", "STD-C EGC");
+    fprintf(stderr, "  %-12s %-8s %-6s %-8s %s\n",
+            "---------", "---", "------", "--------", "---------");
 
-    if (ctx->initialized) {
-        sdrplay_api_Uninit(ctx->device.dev);
-        ctx->initialized = 0;
+    for (size_t i = 0; i < ARRAY_SIZE(satellites); i++) {
+        const satellite_t *s = &satellites[i];
+        int aero_count = 0;
+        int stdc_count = 0;
+        for (int j = 0; j < s->num_channels; j++) {
+            if (s->channels[j].type == CHAN_STDC_EGC)
+                stdc_count++;
+            else
+                aero_count++;
+        }
+        fprintf(stderr, "  %-12s %+.1f%s  %-6s %d aero   %.3f MHz\n",
+                s->name, s->position,
+                s->position < 0 ? "W" : "E",
+                s->region, aero_count,
+                s->stdc_egc_freq / 1e6);
     }
-    if (ctx->selected) {
-        sdrplay_api_ReleaseDevice(&ctx->device);
-        ctx->selected = 0;
-    }
-    if (ctx->opened) {
-        sdrplay_api_Close();
-        ctx->opened = 0;
-    }
-
-    free(ctx);
 }
