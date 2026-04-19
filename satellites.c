@@ -21,6 +21,16 @@
  * becomes available.
  */
 
+/* WHQ
+ * Frequencies from SDRReceiver WHQ config. */
+static const channel_def_t channels_whq[] = {
+    /* Aero 600 and 1200 baud channels */
+    { 1545117860.0, CHAN_AERO_600,  0 },
+    { 1545122890.0, CHAN_AERO_600,  1 },
+    { 1545127910.0, CHAN_AERO_1200, 2 },
+    { 1545132890.0, CHAN_AERO_600,  3 },
+};
+
 /* I4-F3 (98W, AORW) -- Americas region
  * Frequencies from SDRReceiver 98W config (verified against live signals). */
 static const channel_def_t channels_4f3[] = {
@@ -162,6 +172,19 @@ static const channel_def_t channels_f1[] = {
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 static const satellite_t satellites[] = {
+    {
+        .name = "WHQ",
+        .designator = "WHQ",
+        .position = 25.0,
+        .region = "IOR",
+        /* STD-C NCS is on a different sub-band (~1537 MHz). --mode=full
+         * covers both; Aero-only modes ignore this. */
+        .stdc_egc_freq = 1537104000.0,
+        .channels = channels_whq,
+        .num_channels = ARRAY_SIZE(channels_whq),
+        .freq_min = 1537000000.0,
+        .freq_max = 1546186430.0,
+    },
     {
         .name = "I4-F3",
         .designator = "4F3",
