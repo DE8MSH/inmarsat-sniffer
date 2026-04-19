@@ -211,9 +211,27 @@ static const satellite_t satellites[] = {
 };
 
 const satellite_t *satellite_lookup(const char *designator) {
+    /* Primary designator match */
     for (size_t i = 0; i < ARRAY_SIZE(satellites); i++) {
         if (strcasecmp(satellites[i].designator, designator) == 0)
             return &satellites[i];
+    }
+    /* Geographic position aliases (matches SDRReceiver naming) */
+    struct { const char *alias; const char *designator; } aliases[] = {
+        { "98W",      "4F3" },  /* Inmarsat 4-F3 Americas */
+        { "54W",      "3F5" },  /* Inmarsat 3-F5 Atlantic */
+        { "25E",      "AF1" },  /* Alphasat / I-4 AF1 Indian Ocean */
+        { "143E",     "F1"  },  /* Inmarsat 4-F1 Pacific */
+        { "143.5E",   "F1"  },
+        { "alphasat", "AF1" },
+    };
+    for (size_t i = 0; i < ARRAY_SIZE(aliases); i++) {
+        if (strcasecmp(aliases[i].alias, designator) == 0) {
+            for (size_t j = 0; j < ARRAY_SIZE(satellites); j++) {
+                if (strcasecmp(satellites[j].designator, aliases[i].designator) == 0)
+                    return &satellites[j];
+            }
+        }
     }
     return NULL;
 }
