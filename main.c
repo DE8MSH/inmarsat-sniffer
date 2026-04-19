@@ -741,6 +741,16 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                             channel_id, aes_id, ges_id,
                             amsg->reg[0] ? amsg->reg : "?",
                             amsg->label, amsg->block_id ? amsg->block_id : '?');
+
+                    /* Aircraft DB lookup by AES ID — shows description + operator */
+                    aircraft_info_t info;
+                    if (aircraft_db_lookup_by_aes(aes_id, &info)) {
+                        const char *desc = info.description ? info.description : info.type;
+                        if (desc && *desc) fprintf(stderr, "  %s", desc);
+                        if (info.operator_ && *info.operator_)
+                            fprintf(stderr, " / %s", info.operator_);
+                    }
+
                     if (amsg->txt && amsg->txt[0])
                         fprintf(stderr, "\n  %s", amsg->txt);
                     fprintf(stderr, "\n");
@@ -1145,16 +1155,19 @@ int main(int argc, char **argv) {
             errx(1, "Failed to start web dashboard");
     }
 
-    /* Basestation (SBS) output for aircraft positions. */
-    if (basestation_enabled) {
+    /* Aircraft DB — always load if available. Used for:
+     *   - AES → aircraft type/operator enrichment on ACARS output
+     *   - Registration → ICAO hex lookup for SBS basestation output */
+    {
         const char *dbpath = aircraft_db_path ? aircraft_db_path
                                                : aircraft_db_default_path();
-        if (!dbpath || aircraft_db_load(dbpath) < 0) {
-            fprintf(stderr, "basestation: no aircraft database found\n"
+        if (dbpath && aircraft_db_load(dbpath) < 0 && basestation_enabled) {
+            fprintf(stderr, "aircraft_db: no database found\n"
                     "  Run: inmarsat-sniffer --update-db\n"
                     "  Or specify: --aircraft-db=PATH\n");
-            /* Continue without DB — positions still go out, just no ICAO hex. */
         }
+    }
+    if (basestation_enabled) {
         if (basestation_init(basestation_endpoint) != 0)
             errx(1, "Failed to start basestation output");
     }
