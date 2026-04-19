@@ -6,7 +6,7 @@ Supports HackRF, BladeRF, USRP (UHD), RTL-SDR, SDRplay (native API v3), and any 
 
 The Aero decode chain uses JAERO's proven DSP code (MskDemodulator, BurstOqpskDemodulator, AeroL) ported from [jontio/JAERO](https://github.com/jontio/JAERO), Qt-stripped to pure C++. When [libacars-2](https://github.com/szpajder/libacars) is installed, ARINC-622 application payloads (ADS-C position reports, CPDLC controller-pilot messages) are fully decoded and reassembled.
 
-Sister project to [iridium-sniffer](https://github.com/alphafox02/iridium-sniffer) for Iridium L-band.
+Sister project to [iridium-sniffer](https://github.com/DE8MSH/iridium-sniffer) for Iridium L-band.
 
 ## Features
 
@@ -52,7 +52,7 @@ All decoded simultaneously from a single wideband capture.
 DragonOS has the SDR libraries and libacars pre-installed. Just clone and build:
 
 ```bash
-git clone https://github.com/alphafox02/inmarsat-sniffer.git
+git clone https://github.com/DE8MSH/inmarsat-sniffer.git
 cd inmarsat-sniffer
 mkdir build && cd build
 cmake ..
@@ -64,7 +64,7 @@ CMake auto-detects available backends. All should show "enabled".
 ### Ubuntu / Debian
 
 ```bash
-git clone https://github.com/alphafox02/inmarsat-sniffer.git
+git clone https://github.com/DE8MSH/inmarsat-sniffer.git
 cd inmarsat-sniffer
 
 # Core dependencies
@@ -97,7 +97,7 @@ make -j$(nproc)
 
 ```bash
 brew install cmake librtlsdr hackrf libbladerf uhd soapysdr libacars mosquitto zmq
-git clone https://github.com/alphafox02/inmarsat-sniffer.git
+git clone https://github.com/DE8MSH/inmarsat-sniffer.git
 cd inmarsat-sniffer && mkdir build && cd build
 cmake .. && make -j$(sysctl -n hw.ncpu)
 ```
@@ -302,7 +302,7 @@ Channels are automatically filtered based on your SDR's actual bandwidth -- the 
 
 ## Related projects
 
-- [iridium-sniffer](https://github.com/alphafox02/iridium-sniffer) -- Sister project for Iridium L-band
+- [iridium-sniffer](https://github.com/DE8MSH/iridium-sniffer) -- Sister project for Iridium L-band
 - [JAERO](https://github.com/jontio/JAERO) -- Aero ACARS decoder (Qt GUI), DSP code ported here
 - [libacars](https://github.com/szpajder/libacars) -- ACARS/ARINC-622 message decoder library
 - [SatDump](https://github.com/SatDump/SatDump) -- Multi-satellite decoder
