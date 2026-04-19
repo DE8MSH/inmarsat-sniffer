@@ -47,6 +47,7 @@ public:
     void setSettings(Settings settings);
     void invalidatesettings();
     void setAFC(bool state);
+    void DCDstatSlot(bool _dcd) { dcd = _dcd; }
     void setSQL(bool state);
     void setCPUReduce(bool state);
     void setScatterPointType(ScatterPointType type);

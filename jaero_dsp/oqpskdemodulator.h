@@ -71,6 +71,9 @@ public:
     double getMSE() const { return mse; }
     double getEbNo() const { return ebnomeasure ? ebnomeasure->EbNo : 0; }
 
+    /* AeroL DCD feedback — tells demod when frame sync is achieved */
+    void DCDstatSlot(bool _dcd);
+
 private:
     oqpsk_soft_bits_cb soft_bits_cb;
     void *soft_bits_user;
@@ -80,7 +83,6 @@ private:
 
     /* Internal slot equivalents (called directly, not via Qt). */
     void FreqOffsetEstimateSlot(double freq_offset_est);
-    void DCDstatSlot(bool _dcd);
     void processAudio(const short *data, int num_samples);
 
     bool afc;
