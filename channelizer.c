@@ -75,6 +75,11 @@ typedef struct {
     /* Which channel indices belong to this band */
     int channel_indices[MAX_CHANNELS];
     int num_channels;
+
+    /* Modulation family — channels of different family never share a band
+     * even if their frequency ranges are compatible. Prevents asymmetric
+     * centroid placement when distinct spectral clusters are nearby. */
+    int family;
 } band_state_t;
 
 /* ------------------------------------------------------------------ */
@@ -230,6 +235,21 @@ static double target_output_rate(channel_type_t type) {
     }
 }
 
+/* Group channels that should share a stage-1 band. MSK 600/1200 share
+ * (same spectral cluster, same modulation family). OQPSK 10500 and 8400
+ * have different RRC α so they're kept separate — also avoids pulling
+ * the band centroid between two distinct clusters. */
+static int modulation_family(channel_type_t type) {
+    switch (type) {
+    case CHAN_STDC_EGC:   return 0;  /* BPSK */
+    case CHAN_AERO_600:
+    case CHAN_AERO_1200:  return 1;  /* MSK */
+    case CHAN_AERO_10500: return 2;  /* OQPSK α=1.0 */
+    case CHAN_AERO_8400:  return 3;  /* OQPSK α=0.6 */
+    default: return -1;
+    }
+}
+
 /* Target intermediate rate for stage-1 based on channel type.
  * OQPSK channels need a narrower intermediate band for cleaner stage-2
  * decimation; MSK/BPSK channels tolerate a wider intermediate band. */
@@ -334,8 +354,10 @@ static int init_band(band_state_t *b, double center_freq,
  * s1_decim is the stage-1 decimation factor chosen by the caller
  * to guarantee exact total decimation (s1 * s2 = total). */
 static int find_or_create_band(channelizer_t *ch, double freq,
+                                channel_type_t type,
                                 int channel_slot, int s1_decim) {
     double actual_inter = ch->samp_rate / (double)s1_decim;
+    int family = modulation_family(type);
 
     /* Tolerance: channel must fit within ±40% of intermediate BW
      * around the band center */
@@ -345,6 +367,8 @@ static int find_or_create_band(channelizer_t *ch, double freq,
     for (int b = 0; b < ch->num_bands; b++) {
         band_state_t *bd = &ch->bands[b];
         if (!bd->active) continue;
+        /* Channels of different modulation family never share a band */
+        if (bd->family != family) continue;
         /* Check rate compatibility (must have same s1_decim) */
         if (fabs(bd->intermediate_rate - actual_inter) >
             actual_inter * 0.01) continue;
@@ -367,6 +391,8 @@ static int find_or_create_band(channelizer_t *ch, double freq,
 
     if (init_band(bd, freq, ch->samp_rate, s1_decim) != 0)
         return -1;
+
+    bd->family = family;
 
     /* Set NCO: shift band center to DC */
     bd->nco_freq = freq - ch->center_freq;
@@ -430,7 +456,7 @@ int channelizer_add_channel(channelizer_t *ch, double freq,
     if (s2_decim < 1) s2_decim = 1;
 
     /* Find or create stage-1 band with exact s1_decim */
-    int bidx = find_or_create_band(ch, freq, slot, s1_decim);
+    int bidx = find_or_create_band(ch, freq, type, slot, s1_decim);
     if (bidx < 0) return -1;
     c->band_idx = bidx;
 
