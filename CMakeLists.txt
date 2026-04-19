@@ -213,8 +213,8 @@ endif()
 add_executable(inmarsat-sniffer ${SOURCES})
 
 # Test tools
-add_executable(test_demod ${PROJECT_SOURCE_DIR}/tools/test_demod.c ${JAERO_DSP_SOURCES})
-target_link_libraries(test_demod PRIVATE Threads::Threads m stdc++ correct)
+add_executable(test_demod ${PROJECT_SOURCE_DIR}/tools/test_demod.c ${JAERO_DSP_SOURCES} ${LIBCORRECT_SOURCES})
+target_link_libraries(test_demod PRIVATE Threads::Threads m stdc++)
 target_include_directories(test_demod PRIVATE ${PROJECT_SOURCE_DIR}/jaero_dsp ${PROJECT_SOURCE_DIR}/jaero_dsp/JFFT ${PROJECT_SOURCE_DIR}/jaero_dsp/libcorrect/include)
 
 # Link required libraries
