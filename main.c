@@ -658,6 +658,25 @@ static void stdc_bits_cb(const float *soft_bits, int num_bits, void *user) {
  * full decode chain (Viterbi → descramble → RS → ISU → ACARS validator).
  * acarsitem.valid was checked inside jaero_demod.cpp, so `data` is ACARS
  * userdata — pass through libacars for human-readable output. */
+/* Ground station channel assignment — aircraft requested a voice/data
+ * session and got assigned a specific C-channel frequency pair. Types:
+ *   0x31 = distress, 0x32 = flight safety, 0x33 = other safety, 0x34 = non-safety */
+static void on_cassign(int channel_id, uint8_t type,
+                        uint32_t aes_id, uint8_t ges_id,
+                        double rx_mhz, double tx_mhz, void *user) {
+    (void)user;
+    const char *type_str;
+    switch (type) {
+    case 0x31: type_str = "DISTRESS"; break;
+    case 0x32: type_str = "SAFETY";   break;
+    case 0x33: type_str = "OTHER_SAFETY"; break;
+    case 0x34: type_str = "NON_SAFETY"; break;
+    default:   type_str = "UNKNOWN"; break;
+    }
+    fprintf(stderr, "\n[C-ASSIGN ch%d AES:%06X GES:%02X] %s  RX=%.4f MHz  TX=%.4f MHz\n",
+            channel_id, aes_id, ges_id, type_str, rx_mhz, tx_mhz);
+}
+
 static void jaero_acars_data_cb(const uint8_t *data, int len,
                                   int channel_id,
                                   uint32_t aes_id, uint8_t ges_id,
@@ -985,9 +1004,12 @@ static void channel_output_cb(int channel_id, channel_type_t type,
             /* JAERO's continuous MskDemodulator + AeroL (P-channel mode) */
             jc->pmsk = jaero_pmsk_create(output_rate, (double)baud,
                                           channel_id, jaero_bits_cb, NULL);
-            if (jc->pmsk)
+            if (jc->pmsk) {
                 jaero_pmsk_set_acars_callback(jc->pmsk,
                                                jaero_acars_data_cb, NULL);
+                jaero_pmsk_set_cassign_callback(jc->pmsk,
+                                                  on_cassign, NULL);
+            }
 
             fprintf(stderr, "[PMSK ch%d] baud=%d rate=%.0f (continuous P-channel)\n",
                     channel_id, baud, output_rate);

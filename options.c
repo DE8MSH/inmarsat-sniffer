@@ -627,6 +627,10 @@ void parse_options(int argc, char **argv) {
                         iq_format = FMT_CF32;
                     else if (strcasecmp(ext, ".ci16") == 0 || strcasecmp(ext, ".cs16") == 0)
                         iq_format = FMT_CI16;
+                    else if (strcasecmp(ext, ".cu8") == 0)
+                        iq_format = FMT_CU8;
+                    else if (strcasecmp(ext, ".ci8") == 0 || strcasecmp(ext, ".cs8") == 0)
+                        iq_format = FMT_CI8;
                 }
             }
         }

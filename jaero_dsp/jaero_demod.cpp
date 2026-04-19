@@ -266,6 +266,8 @@ struct jaero_pmsk_demod {
     void *user;
     jaero_acars_cb acars_cb;
     void *acars_user;
+    jaero_cassign_cb cassign_cb;
+    void *cassign_user;
 };
 
 static void pmsk_bits_adapter(const short *bits, int num_bits, void *ctx)
@@ -368,6 +370,24 @@ void jaero_pmsk_set_acars_callback(jaero_pmsk_demod_t *d,
         d->aerol->setACARSCallback(pmsk_acars_adapter, d);
 }
 
+static void pmsk_cassign_adapter(CChannelAssignmentItem &item, void *ctx)
+{
+    jaero_pmsk_demod_t *d = (jaero_pmsk_demod_t *)ctx;
+    if (d->cassign_cb)
+        d->cassign_cb(d->channel_id, item.type, item.AESID, item.GESID,
+                      item.receive_freq, item.transmit_freq, d->cassign_user);
+}
+
+void jaero_pmsk_set_cassign_callback(jaero_pmsk_demod_t *d,
+                                       jaero_cassign_cb cb, void *user)
+{
+    if (!d) return;
+    d->cassign_cb = cb;
+    d->cassign_user = user;
+    if (d->aerol)
+        d->aerol->setCChannelAssignmentCallback(pmsk_cassign_adapter, d);
+}
+
 double jaero_pmsk_get_mse(jaero_pmsk_demod_t *d) {
     if (!d || !d->demod) return 1.0;
     return d->demod->getMSE();
@@ -392,6 +412,8 @@ struct jaero_oqpsk_cont_demod {
     void *user;
     jaero_acars_cb acars_cb;
     void *acars_user;
+    jaero_cassign_cb cassign_cb;
+    void *cassign_user;
 };
 
 static void oqpsk_cont_aerol_acars_adapter(ACARSItem &acarsitem, void *ctx)
@@ -498,6 +520,24 @@ void jaero_oqpsk_cont_set_acars_callback(jaero_oqpsk_cont_demod_t *d,
     d->acars_user = user;
     if (d->aerol)
         d->aerol->setACARSCallback(oqpsk_cont_aerol_acars_adapter, d);
+}
+
+static void oqpsk_cont_cassign_adapter(CChannelAssignmentItem &item, void *ctx)
+{
+    jaero_oqpsk_cont_demod_t *d = (jaero_oqpsk_cont_demod_t *)ctx;
+    if (d->cassign_cb)
+        d->cassign_cb(d->channel_id, item.type, item.AESID, item.GESID,
+                      item.receive_freq, item.transmit_freq, d->cassign_user);
+}
+
+void jaero_oqpsk_cont_set_cassign_callback(jaero_oqpsk_cont_demod_t *d,
+                                              jaero_cassign_cb cb, void *user)
+{
+    if (!d) return;
+    d->cassign_cb = cb;
+    d->cassign_user = user;
+    if (d->aerol)
+        d->aerol->setCChannelAssignmentCallback(oqpsk_cont_cassign_adapter, d);
 }
 
 double jaero_oqpsk_cont_get_mse(jaero_oqpsk_cont_demod_t *d) {
