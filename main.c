@@ -1373,6 +1373,9 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Channelizer: %d channels active (%ld CPU cores available)\n",
                 added, ncpu > 0 ? ncpu : 1);
 
+        /* Rebalance bands so no channel sits at DC (where offset/1/f noise hurt) */
+        channelizer_finalize(channelizer);
+
         /* Initialize STD-C demod/decode chain if we have an EGC channel */
         for (int i = 0; i < sat->num_channels; i++) {
             if (sat->channels[i].type == CHAN_STDC_EGC &&

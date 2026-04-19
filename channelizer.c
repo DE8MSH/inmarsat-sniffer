@@ -660,6 +660,58 @@ void channelizer_adjust_center(channelizer_t *ch, double offset_hz) {
             offset_hz, ch->center_freq / 1e6);
 }
 
+void channelizer_finalize(channelizer_t *ch) {
+    if (!ch) return;
+
+    /* For each band, compute the centroid of its channel frequencies,
+     * update the band center, and rebalance each channel's per-channel
+     * NCO to the new center. This avoids placing any channel at DC
+     * (where DC offset and 1/f noise cause artifacts) and symmetrizes
+     * filter response across the channel cluster. */
+    for (int b = 0; b < ch->num_bands; b++) {
+        band_state_t *bd = &ch->bands[b];
+        if (!bd->active || bd->num_channels == 0) continue;
+
+        /* Compute centroid from member channels */
+        double freq_sum = 0;
+        double freq_lo = 1e18, freq_hi = 0;
+        for (int ci = 0; ci < bd->num_channels; ci++) {
+            int cidx = bd->channel_indices[ci];
+            channel_state_t *cs = &ch->channels[cidx];
+            double ch_freq = bd->center_freq + cs->nco_freq;
+            freq_sum += ch_freq;
+            if (ch_freq < freq_lo) freq_lo = ch_freq;
+            if (ch_freq > freq_hi) freq_hi = ch_freq;
+        }
+        double centroid = freq_sum / bd->num_channels;
+        double shift = centroid - bd->center_freq;
+        if (fabs(shift) < 1.0) continue;  /* already centered */
+
+        /* Update band NCO to mix the new centroid to DC */
+        bd->nco_freq += shift;
+        double phase_inc = -2.0 * M_PI * bd->nco_freq / ch->samp_rate;
+        bd->nco_phasor  = cosf((float)phase_inc) + sinf((float)phase_inc) * I;
+        bd->nco_current = 1.0f;
+        bd->center_freq = centroid;
+
+        /* Rebalance each channel's stage-2 NCO relative to new centroid */
+        double inter_rate = bd->intermediate_rate;
+        for (int ci = 0; ci < bd->num_channels; ci++) {
+            int cidx = bd->channel_indices[ci];
+            channel_state_t *cs = &ch->channels[cidx];
+            cs->nco_freq -= shift;
+            double cph_inc = -2.0 * M_PI * cs->nco_freq / inter_rate;
+            cs->nco_phasor  = cosf((float)cph_inc) + sinf((float)cph_inc) * I;
+            cs->nco_current = 1.0f;
+        }
+
+        fprintf(stderr,
+                "Channelizer: band %d rebalanced  center=%.3f MHz  "
+                "cluster=[%.3f..%.3f] MHz\n",
+                b, centroid / 1e6, freq_lo / 1e6, freq_hi / 1e6);
+    }
+}
+
 void channelizer_destroy(channelizer_t *ch) {
     if (!ch) return;
 

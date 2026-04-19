@@ -64,6 +64,14 @@ double channelizer_output_rate(channelizer_t *ch, int channel_id);
  * Called once after auto-calibration detects carrier offset. */
 void channelizer_adjust_center(channelizer_t *ch, double offset_hz);
 
+/* Finalize channel layout after all channels are added.
+ * Rebalances each band's center frequency to the geometric centroid
+ * of its channels, keeping no channel at DC. This reduces DC-offset
+ * artifacts and symmetrizes filter response across the channel cluster.
+ * Call this once after all channelizer_add_channel() calls, before
+ * channelizer_process(). */
+void channelizer_finalize(channelizer_t *ch);
+
 /* Destroy the channelizer and free resources. */
 void channelizer_destroy(channelizer_t *ch);
 
