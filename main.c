@@ -336,9 +336,9 @@ int rtl_dev_index = -1;
 #endif
 #ifdef HAVE_HACKRF
 char *hackrf_serial = NULL;
-int hackrf_lna_gain = 40;
-int hackrf_vga_gain = 20;
-int hackrf_amp_enable = 0;
+int hackrf_lna_gain = 40;  /* max LNA for weak L-band */
+int hackrf_vga_gain = 40;  /* higher VGA for satellite signals (tested working) */
+int hackrf_amp_enable = 0; /* off — enable with --hackrf-amp if no external LNA */
 #endif
 #ifdef HAVE_BLADERF
 int bladerf_num = -1;
@@ -1193,15 +1193,21 @@ int main(int argc, char **argv) {
         if (samp_rate == 0) {
             double span = hi - lo;
             samp_rate = span * 1.2;
-            /* Per-SDR optimized defaults matching SDRReceiver:
-             *   RTL-SDR: 1.536 MHz (clean 32x decimation, best SNR on 8-bit)
-             *   SDRplay: 3.072 MHz (clean 64x decimation, native ADC rate)
+            /* Per-SDR optimized defaults:
+             *   RTL-SDR: 1.536 MHz (clean 32x decimation, best SNR on 8-bit
+             *            with RTL-SDR's auto-adjusting IF filter)
+             *   SDRplay: 3.072 MHz (clean 64x decimation, native ADC rate,
+             *            matches SDRReceiver)
+             *   HackRF:  6 MHz (HackRF's wider fixed IF means low rates alias
+             *            noise — 6 MHz is near its native sweet spot)
              *   Others:  2.4 MHz floor */
             double min_rate;
             if (rtl_dev_index >= 0)
                 min_rate = 1536000;
             else if (sdrplay_serial != NULL)
                 min_rate = 3072000;
+            else if (hackrf_serial != NULL)
+                min_rate = 6000000;
             else
                 min_rate = 2400000;
             if (samp_rate < min_rate)
@@ -1214,6 +1220,7 @@ int main(int argc, char **argv) {
     if (samp_rate == 0) {
         if (rtl_dev_index >= 0)           samp_rate = 1536000;
         else if (sdrplay_serial != NULL)  samp_rate = 3072000;
+        else if (hackrf_serial != NULL)   samp_rate = 6000000;
         else                              samp_rate = 2400000;
     }
     if (center_freq == 0)

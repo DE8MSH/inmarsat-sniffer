@@ -145,11 +145,11 @@ You need an antenna covering 1525-1559 MHz. A modified GPS patch, small helix, o
 # SDRplay, decode Aero ACARS on Inmarsat 4F3 (Americas, 98W)
 inmarsat-sniffer -i sdrplay --satellite=4F3
 
-# RTL-SDR
+# RTL-SDR (defaults to 1.536 MHz — matches SDRReceiver for best 8-bit SNR)
 inmarsat-sniffer -i rtl-0 --satellite=4F3 --mode=aero
 
-# HackRF
-inmarsat-sniffer -i hackrf --satellite=4F3 -B
+# HackRF (defaults to 6 MHz, LNA=40, VGA=40 — tested decoding MSK + OQPSK)
+inmarsat-sniffer -i hackrf --satellite=4F3 --mode=aero --web -B
 ```
 
 ### With web dashboard + SBS feed
