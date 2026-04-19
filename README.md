@@ -306,7 +306,7 @@ Channels are automatically filtered based on your SDR's actual bandwidth -- the 
 - [JAERO](https://github.com/jontio/JAERO) -- Aero ACARS decoder (Qt GUI), DSP code ported here
 - [libacars](https://github.com/szpajder/libacars) -- ACARS/ARINC-622 message decoder library
 - [SatDump](https://github.com/SatDump/SatDump) -- Multi-satellite decoder
-- [Scytale-C](https://github.com/cropinghigh/sdrpp-inmarsat-demodulator) -- SDR++ Inmarsat-C plugin
+- ~~[Scytale-C](https://github.com/cropinghigh/sdrpp-inmarsat-demodulator) -- SDR++ Inmarsat-C plugin~~ Delivers a very clean 404.
 - [inmarsatc](https://github.com/cropinghigh/inmarsatc) -- Inmarsat-C decoder library
 - [stdcdec](https://github.com/cropinghigh/stdcdec) -- Standalone STD-C decoder
 - [gr-JAERO](https://github.com/muaddib1984/gr-JAERO) -- GNU Radio Inmarsat Aero RF front-end
