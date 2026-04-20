@@ -4,17 +4,16 @@ A standalone Inmarsat L-band decoder written in C. Decodes STD-C (Enhanced Group
 
 Supports HackRF, BladeRF, USRP (UHD), RTL-SDR, SDRplay (native API v3), and any SoapySDR device for live capture, plus VITA 49 (VRT) UDP input and IQ file playback. Built-in web dashboard (`--web`) provides a real-time Leaflet.js map with aircraft positions and decoded messages. Outputs include JSON feed (`--feed`, `--udp`), SBS/BaseStation (`--basestation`) for tar1090/VRS, and MQTT (`--mqtt`) -- all with JAERO-compatible field names for drop-in integration with existing tools.
 
-The Aero decode chain uses JAERO's proven DSP code (MskDemodulator, BurstOqpskDemodulator, AeroL) ported from [jontio/JAERO](https://github.com/jontio/JAERO), Qt-stripped to pure C++. When [libacars-2](https://github.com/szpajder/libacars) is installed, ARINC-622 application payloads (ADS-C position reports, CPDLC controller-pilot messages) are fully decoded and reassembled.
+The Aero decode chain uses JAERO's proven DSP code (MskDemodulator, OqpskDemodulator, plus BurstMskDemodulator / BurstOqpskDemodulator for future burst-channel work) ported from [jontio/JAERO](https://github.com/jontio/JAERO), Qt-stripped to pure C++. When [libacars-2](https://github.com/szpajder/libacars) is installed, ARINC-622 application payloads (ADS-C position reports, CPDLC controller-pilot messages) are fully decoded and reassembled.
 
 Sister project to [iridium-sniffer](https://github.com/alphafox02/iridium-sniffer) for Iridium L-band.
 
 ## Features
 
 - Simultaneous STD-C EGC + Aero ACARS decode from one SDR
-- 27-channel parallel demodulation with per-channel worker threads
+- Up to 27-channel parallel demodulation with per-channel worker threads (varies by satellite: 4F3/AF1=27, F1=17, 3F5=14)
 - Aero 600/1200 baud MSK (P-channel continuous, via JAERO MskDemodulator + AeroL)
-- Aero 10500 baud OQPSK (continuous forward link, via JAERO OqpskDemodulator + AeroL)
-- Aero 8400 baud OQPSK (C-channel, via JAERO BurstOqpskDemodulator + AeroL)
+- Aero 10500/8400 baud OQPSK (continuous OqpskDemodulator + AeroL)
 - STD-C EGC: DBPSK demod, Viterbi k=7 FEC, frame sync and message parsing
 - ADS-C position extraction from binary ARINC 620 payloads (tags 7/9/10/14/15/18/19/20)
 - CPDLC (controller-pilot datalink) message surfacing via libacars
@@ -25,13 +24,15 @@ Sister project to [iridium-sniffer](https://github.com/alphafox02/iridium-sniffe
 - JSON feed with station-id (`--feed`, `--udp`, `--station-id`)
 - JAERO text format 3 output (`--jaero-format=HOST:PORT`) via UDP for legacy script compatibility
 - AES/GES identifiers from ISU layer in all outputs
-- Built-in web dashboard with dark theme, aircraft markers, signal quality bars, trail history, CSV export
-- Two-stage channelizer with per-channel digital gain (MSK=5x, OQPSK=3x)
-- Periodic auto-calibration for SDR crystal drift (every 60s)
-- Aircraft database (568k entries from tar1090-db) for registration-to-ICAO-hex lookup
+- Built-in web dashboard with dark theme, aircraft markers, signal quality bars, trail history, CSV export, and per-channel lock indicator driven by demod signal status (not just message recency)
+- Two-stage channelizer with per-channel digital gain
+- 125-tap Hilbert USB demod on both internal decode and ZMQ output paths (matches SDRReceiver's `vfo::usb_demod()` math; inner loop optimised from 125 to 31 multiplies via antisymmetric zero-tap pairing)
+- Startup auto-calibration for SDR crystal offset (measures carrier error on first active channel, adjusts center freq)
+- Aircraft database (568k entries from tar1090-db) for AES/registration-to-ICAO-hex lookup and type/operator enrichment in ACARS output
 - AVX2, SSE4.2, and NEON SIMD kernels with automatic runtime detection
+- `--skip-c-channel` flag to disable 11 OQPSK 8400 demods (~27% CPU savings, Pi-friendly)
 - RTL-SDR AGC mode (`--agc`) for weak signal setups
-- ZMQ audio output (`-z`) for JAERO-compatible per-channel streaming
+- ZMQ audio output (`--zmq`) for JAERO-compatible per-channel streaming (same USB-demod audio SDRReceiver produces)
 - VITA 49 (VRT) UDP input for remote/distributed SDR setups
 - HackRF, BladeRF, USRP, RTL-SDR, SDRplay, and SoapySDR native backends
 - MacOS (Homebrew) build support on Intel and Apple Silicon
@@ -148,8 +149,11 @@ inmarsat-sniffer -i sdrplay --satellite=4F3
 # RTL-SDR (defaults to 1.536 MHz — matches SDRReceiver for best 8-bit SNR)
 inmarsat-sniffer -i rtl-0 --satellite=4F3 --mode=aero
 
-# HackRF (defaults to 6 MHz, LNA=40, VGA=40 — tested decoding MSK + OQPSK)
+# HackRF (defaults to 6 MHz, LNA=40, VGA=20 — tested decoding MSK + OQPSK)
 inmarsat-sniffer -i hackrf --satellite=4F3 --mode=aero --web -B
+
+# Raspberry Pi friendly (RTL-SDR, skip C-channels)
+inmarsat-sniffer -i rtl-0 --satellite=4F3 --mode=aero --skip-c-channel
 ```
 
 ### With web dashboard + SBS feed
@@ -227,38 +231,52 @@ Recordings are capped at 500 MB (~1-2 minutes depending on sample rate). RTL-SDR
 --mode=auto    # Auto-select based on SDR bandwidth
 ```
 
+### Low-power hosts (Raspberry Pi, SBCs)
+
+The 11 OQPSK 8400 C-channel demods (ch17-27 on 4F3/AF1) carry burst
+voice/data sessions that rarely emit ACARS. Skipping them cuts total
+CPU by ~27% with no impact on P-channel ACARS or OQPSK 10500 decodes:
+
+```bash
+inmarsat-sniffer -i rtl-0 --satellite=4F3 --mode=aero --skip-c-channel
+```
+
+Rough CPU on an i7-11800H (SDRplay @ 3.072 MHz):
+- All 27 channels: ~290% (2.9 cores)
+- `--skip-c-channel`: ~150% (1.5 cores)
+- RTL-SDR @ 1.536 MHz + `--skip-c-channel`: comfortable on Pi 5; Pi 4 probably too slow
+
 ## Satellites
 
 | Flag | Name | Position | Region | Notes |
 |------|------|----------|--------|-------|
 | `4F3` | Inmarsat 4-F3 | 98.0W | Americas (AORW) | Best from North/South America |
 | `3F5` | Inmarsat 3-F5 | 54.0W | Atlantic (AORE) | Eastern US and Europe |
-| `AF1` | Alphasat / I4-AF1 | 25.0E | Indian Ocean (IOR) | Europe, Africa, Middle East |
-| `F1`  | Inmarsat 4-F1 | 143.5E | Pacific (POR) | Asia-Pacific, Australia |
+| `AF1` | Alphasat (I-4A F4) | 25.0E | EMEA | Europe, Africa, Middle East. Aliases: `AF4`, `4AF4`, `alphasat`, `25E` |
+| `F1`  | Inmarsat 4-F1 | 143.5E | Pacific (POR) | Asia-Pacific, Australia. Aliases: `4F1`, `143E` |
 
 ## Architecture
 
 ```
-SDR/file/VITA49 --> channelizer (DDC per channel, SIMD-accelerated)
+SDR/file/VITA49 --> channelizer (two-stage DDC per channel, SIMD-accelerated)
                         |
                         +-- STD-C EGC --> DBPSK demod --> Viterbi k=7 --> frame parser
                         |
-                        +-- Aero 600/1200 --> JAERO MskDemodulator --> AeroL --+
-                        |                    (continuous MSK, AFC)              |
-                        +-- Aero 10500 ------> JAERO OqpskDemodulator ------->+
-                        |                    (continuous OQPSK, AFC)            |
-                        +-- Aero 8400 -------> JAERO BurstOqpskDemodulator -->+
-                                                                               |
-                                                                     libacars (optional)
-                                                                     ADS-C, CPDLC, ACARS
-                                                                               |
-                                                               +---------------+---------------+
-                                                               |               |               |
-                                                          JSON feed      SBS/BaseStation     MQTT
-                                                          (--feed/--udp)  (--basestation)  (--mqtt)
+                        +-- Aero 600/1200 --> Hilbert USB --> JAERO MskDemodulator --+
+                        |                                    (continuous MSK, AFC)   |
+                        +-- Aero 10500 ------> Hilbert USB --> JAERO OqpskDemod ---->+
+                        |                                    (continuous OQPSK, AFC) |
+                        +-- Aero 8400 -------> Hilbert USB --> JAERO OqpskDemod ---->+--> AeroL
+                                                                                     |
+                                                                      libacars (optional)
+                                                                      ADS-C, CPDLC, ACARS
+                                                                                     |
+                                                               +---------+-----------+----------+
+                                                               |         |           |          |
+                                                          JSON feed    SBS/BS       MQTT    ZMQ audio
+                                                          (--feed)   (--basestation) (--mqtt)  (--zmq)
                                                                |
-                                                          Web dashboard
-                                                          (--web :8888)
+                                                          Web dashboard (--web :8888)
 ```
 
 ## Bandwidth and SDR selection
@@ -274,31 +292,31 @@ Channels are automatically filtered based on your SDR's actual bandwidth -- the 
 
 ## Current status
 
-**Working and verified live:**
+**Working and verified live on 4F3 (98°W):**
 
-- 600/1200 baud MSK P-channel ACARS decode (tested 9000+ messages, 220+ aircraft, 100% CRC pass)
+- 600/1200 baud MSK P-channel ACARS decode (thousands of messages across hundreds of aircraft, 100% CRC pass)
+- 10500 baud OQPSK forward link -- continuous OqpskDemodulator with Hilbert USB demod, aircraft decoded across ch13-16 on both SDRplay and RTL-SDR
 - ADS-C position extraction (oceanic aircraft tracked across North/South Atlantic, Americas)
 - CPDLC controller-pilot messages decoded via libacars
 - SBS basestation feed verified with remote aggregator
 - Per-channel threading with zero drops over multi-hour runs
-- Web dashboard with live aircraft markers and trail history
+- Web dashboard with live aircraft markers, trail history, sigstat-driven lock indicator
+- ZMQ audio output -- external JAERO locks and decodes the exact same audio our internal demod consumes (SDRReceiver-compatible Hilbert USB wiring)
+- Aircraft DB enrichment -- registration, type, and operator shown alongside ACARS output
+- RTL-SDR Blog V4 and SDRplay RSPdx/RSP1A both tested
+- Capture replay via `-f FILE` matches live decode counts
 
-**Working:**
+**Plumbed, awaiting traffic or verification:**
 
-- 10500 baud OQPSK forward link -- continuous OqpskDemodulator, multiple aircraft decoded across ch13-16 on both SDRplay and RTL-SDR (American Airlines, Lufthansa, Brussels Airlines, Virgin Atlantic, EVA Air confirmed). Traffic is sporadic; antenna positioning affects signal quality
-- RTL-SDR Blog V4 -- MSK and 10500 OQPSK decoding verified. Auto-calibration corrects crystal PPM offset at startup
-
-**Not yet verified (plumbed, awaiting traffic):**
-
-- 8400 baud OQPSK C-channel -- continuous OqpskDemodulator wired, cleanup filter widened, but 8400 channels are on-demand (voice/data sessions) and may be silent for extended periods
-- STD-C EGC decode -- code path active, demod searches but hasn't synced in testing. May need stronger signal or different satellite
-- Auto-calibration corrects SDR crystal PPM offset at startup (enables RTL-SDR and other SDRs with less accurate clocks)
+- 8400 baud OQPSK C-channel -- continuous OqpskDemodulator wired, but 8400 channels are burst voice/data sessions and may be silent for extended periods. Skip with `--skip-c-channel` on low-power hosts
+- STD-C EGC decode -- DBPSK/Viterbi path active; hasn't synced in testing on 4F3 at author's location. May need stronger signal or different satellite. AF1 (25E) STD-C carrier corrected to 1537.100 MHz but untested on-air from here
+- HackRF on 4F3 -- decoding at default gains with bias tee; still characterising optimal gain staging
 
 **Not implemented:**
 
 - Voice decoding (Inmarsat Aero carries AMBE-encoded voice on C-channel slots; would require mbelib or similar AMBE codec, same approach as DSD/OP25)
-- R/T burst channel frequencies (not in satellite tables; would need frequency survey)
-- C-band feeder link reception (same OQPSK demod works, just needs C-band dish + downconverter + frequency entries)
+- R/T burst channel frequencies (not in satellite tables; would need frequency survey. BurstMskDemodulator / BurstOqpskDemodulator are ported and ready to wire when frequencies are known)
+- C-band feeder link reception (BurstOqpskDemodulator is the intended demod; needs C-band dish + downconverter + frequency entries)
 
 ## Related projects
 
@@ -306,10 +324,12 @@ Channels are automatically filtered based on your SDR's actual bandwidth -- the 
 - [JAERO](https://github.com/jontio/JAERO) -- Aero ACARS decoder (Qt GUI), DSP code ported here
 - [libacars](https://github.com/szpajder/libacars) -- ACARS/ARINC-622 message decoder library
 - [SatDump](https://github.com/SatDump/SatDump) -- Multi-satellite decoder
-- ~~[Scytale-C](https://github.com/cropinghigh/sdrpp-inmarsat-demodulator) -- SDR++ Inmarsat-C plugin~~ Delivers a very clean 404.
+- [sdrpp-inmarsatc-demodulator](https://github.com/cropinghigh/sdrpp-inmarsatc-demodulator) -- SDR++ Inmarsat-C plugin
 - [inmarsatc](https://github.com/cropinghigh/inmarsatc) -- Inmarsat-C decoder library
 - [stdcdec](https://github.com/cropinghigh/stdcdec) -- Standalone STD-C decoder
 - [gr-JAERO](https://github.com/muaddib1984/gr-JAERO) -- GNU Radio Inmarsat Aero RF front-end
+- [SDRReceiver](https://github.com/jeroenbeijer/SDRReceiver) -- Multi-VFO receiver; our Hilbert USB path uses its `vfo::usb_demod()` math for JAERO compatibility
+- [thebaldgeek STD-C](https://thebaldgeek.github.io/stdc.html) -- Cross-referenced satellite STD-C frequencies
 
 ## License
 
