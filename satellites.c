@@ -30,9 +30,13 @@ static const channel_def_t channels_whq[] = {
     { 1545127910.0, CHAN_AERO_1200, 2 },
     { 1545132890.0, CHAN_AERO_600,  3 },
     /* Aero 10500 baud channels */
-    { 1545493660.0, CHAN_AERO_10500, 4 },
-    { 1545953830.0, CHAN_AERO_10500, 5 },
-    { 1546314060.0, CHAN_AERO_10500, 6 },
+ //   { 1545493660.0, CHAN_AERO_10500, 4 },
+  //  { 1545953830.0, CHAN_AERO_10500, 5 },
+//    { 1546314060.0, CHAN_AERO_10500, 6 },
+    /* Aero 8400 baud (C-channel, voice + data) */
+    { 1546150960.0, CHAN_AERO_8400, 7 },
+    { 1546186140.0, CHAN_AERO_8400, 8 },
+  //  { 1546145700.0, CHAN_AERO_8400, 9 },
 };
 
 /* I4-F3 (98W, AORW) -- Americas region
