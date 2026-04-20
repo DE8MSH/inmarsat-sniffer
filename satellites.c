@@ -30,8 +30,9 @@ static const channel_def_t channels_whq[] = {
     { 1545127910.0, CHAN_AERO_1200, 2 },
     { 1545132890.0, CHAN_AERO_600,  3 },
     /* Aero 10500 baud channels */
-    { 1546213450.0, CHAN_AERO_10500, 4 },
-    { 1546233420.0, CHAN_AERO_10500, 5 },
+    { 1545493660.0, CHAN_AERO_10500, 4 },
+    { 1545953830.0, CHAN_AERO_10500, 5 },
+    { 1546314060.0, CHAN_AERO_10500, 6 },
 };
 
 /* I4-F3 (98W, AORW) -- Americas region
