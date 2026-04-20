@@ -28,4 +28,15 @@ int acars_extract_text_position(const char *label, const char *text,
 int acars_extract_waypoint_position(const char *label, const char *text,
                                      double *lat, double *lon);
 
+/*
+ * Altitude extraction from ACARS text. Looks for common formats:
+ *   FLnnn            explicit flight level (e.g., "FL350")
+ *   nnnF             3-digit flight level with F suffix (MDPOS trailing
+ *                    altitude, e.g., "TUPAC289F" -> FL289 -> 28900 ft)
+ *   ALT nnnnn        tagged feet (e.g., "ALT 35000")
+ *   nnnnnFT          feet with FT suffix (e.g., "35000FT")
+ * Returns 1 and fills *alt_ft on success, 0 otherwise.
+ */
+int acars_extract_text_altitude(const char *text, int *alt_ft);
+
 #endif

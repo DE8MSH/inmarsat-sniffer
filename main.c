@@ -819,6 +819,13 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                                                                     &lat, &lon);
                         if (have_pos) atomic_fetch_add(&stat_pos_waypoint, 1);
                     }
+                    /* If ADS-C didn't supply altitude, try pulling a flight
+                     * level or raw feet out of the ACARS text (MDPOS etc.). */
+                    if (alt_ft == -99999 && amsg->txt) {
+                        int text_alt = 0;
+                        if (acars_extract_text_altitude(amsg->txt, &text_alt))
+                            alt_ft = text_alt;
+                    }
                     if (have_pos) {
                         outmsg.lat = lat;
                         outmsg.lon = lon;

@@ -179,6 +179,75 @@ int acars_extract_text_position(const char *label, const char *text,
     return 0;
 }
 
+/*
+ * Altitude extraction. Tried formats, in order:
+ *  1. FLnnn        e.g., "FL350" -> 35000 ft
+ *  2. nnnF         e.g., "TUPAC289F" at end-of-token -> FL289 -> 28900 ft
+ *                  (MDPOS trailing flight level — must be followed by a
+ *                   delimiter or EOL and preceded by a non-digit to avoid
+ *                   matching parts of lat/lon coordinates)
+ *  3. ALT nnnnn    e.g., "ALT 35000"
+ *  4. nnnnnFT      e.g., "35000FT"
+ * Returns 1 on match, fills *alt_ft in feet.
+ */
+static int is_digit(char c) { return c >= '0' && c <= '9'; }
+
+int acars_extract_text_altitude(const char *text, int *alt_ft)
+{
+    if (!text || !text[0] || !alt_ft) return 0;
+
+    /* Format 1: FLnnn */
+    for (const char *p = strstr(text, "FL"); p; p = strstr(p + 2, "FL")) {
+        const char *q = p + 2;
+        if (is_digit(q[0]) && is_digit(q[1]) && is_digit(q[2]) && !is_digit(q[3])) {
+            int fl = (q[0]-'0')*100 + (q[1]-'0')*10 + (q[2]-'0');
+            if (fl > 0 && fl < 600) { *alt_ft = fl * 100; return 1; }
+        }
+    }
+
+    /* Format 2: nnnF (flight level + F suffix at word boundary) */
+    for (const char *s = text; s[0] && s[1] && s[2] && s[3]; s++) {
+        if (is_digit(s[0]) && is_digit(s[1]) && is_digit(s[2]) && s[3] == 'F') {
+            /* Require non-digit before (avoid mid-coordinate matches like
+             * "000W060" where the 000 lives inside a lat/lon) */
+            if (s != text && is_digit(s[-1])) continue;
+            /* Require delimiter or end-of-string after the F */
+            char after = s[4];
+            if (after != '\0' && after != '.' && after != ',' &&
+                after != ' '  && after != '\r' && after != '\n' &&
+                after != '/') continue;
+            int fl = (s[0]-'0')*100 + (s[1]-'0')*10 + (s[2]-'0');
+            if (fl > 0 && fl < 600) { *alt_ft = fl * 100; return 1; }
+        }
+    }
+
+    /* Format 3: ALT <digits> */
+    const char *p = strstr(text, "ALT");
+    if (p) {
+        p += 3;
+        while (*p == ' ' || *p == '\t') p++;
+        if (is_digit(*p)) {
+            char *end;
+            long v = strtol(p, &end, 10);
+            if (end != p && v > 0 && v < 60000) { *alt_ft = (int)v; return 1; }
+        }
+    }
+
+    /* Format 4: nnnnnFT (5-digit feet with FT suffix) */
+    for (const char *s = text; s[0] && s[1] && s[2] && s[3] && s[4] && s[5]; s++) {
+        if (is_digit(s[0]) && is_digit(s[1]) && is_digit(s[2]) &&
+            is_digit(s[3]) && is_digit(s[4]) &&
+            s[5] == 'F' && s[6] == 'T') {
+            if (s != text && is_digit(s[-1])) continue;
+            int v = (s[0]-'0')*10000 + (s[1]-'0')*1000 + (s[2]-'0')*100 +
+                    (s[3]-'0')*10   + (s[4]-'0');
+            if (v > 0 && v < 60000) { *alt_ft = v; return 1; }
+        }
+    }
+
+    return 0;
+}
+
 int acars_extract_waypoint_position(const char *label, const char *text,
                                      double *lat, double *lon)
 {
