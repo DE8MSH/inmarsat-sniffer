@@ -242,6 +242,7 @@ const satellite_t *satellite_lookup(const char *designator) {
     }
     /* Geographic position + common-name aliases */
     struct { const char *alias; const char *designator; } aliases[] = {
+        { "25%",      "WHQ" },  /* Alphasat / I-4A F4 EMEA */   
         { "98W",      "4F3" },  /* Inmarsat 4-F3 Americas */
         { "54W",      "3F5" },  /* Inmarsat 3-F5 Atlantic */
         { "25E",      "AF1" },  /* Alphasat / I-4A F4 EMEA */
