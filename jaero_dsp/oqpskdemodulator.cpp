@@ -492,6 +492,6 @@ void OqpskDemodulator::feedAudio(const int16_t *samples, int num_samples, int sa
 void OqpskDemodulator::feedIQ(const double *iq_interleaved, int num_samples)
 {
     std::vector<int16_t> pcm(num_samples);
-    feediq_usb.process(iq_interleaved, num_samples, Fs, freq_center, 3.0, pcm.data());
+    feediq_usb.process(iq_interleaved, num_samples, Fs, freq_center, 5.0, pcm.data());
     processAudio(pcm.data(), num_samples);
 }
