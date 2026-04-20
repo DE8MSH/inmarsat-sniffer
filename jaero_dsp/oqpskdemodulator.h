@@ -8,6 +8,7 @@
 
 #include "DSP.h"
 #include "coarsefreqestimate.h"
+#include "hilbert_usb.h"
 #include <vector>
 #include <complex>
 #include <cstdint>
@@ -60,12 +61,23 @@ public:
     /* Callback registration. */
     void setSoftBitsCallback(oqpsk_soft_bits_cb cb, void *user);
 
+    /* Signal status callback — fired when mse crosses signalthreshold.
+     * JAERO uses this to tell AeroL to reset when signal is lost, so
+     * noise doesn't accumulate into AeroL's frame sync state. */
+    typedef void (*signal_status_cb)(bool signal_good, void *user);
+    void setSignalStatusCallback(signal_status_cb cb, void *user) {
+        sigstat_cb = cb; sigstat_user = user; sigstat_last = true;
+    }
+
     double getMSE() const { return mse; }
     double getEbNo() const { return ebnomeasure ? ebnomeasure->EbNo : 0; }
 
 private:
     oqpsk_soft_bits_cb soft_bits_cb;
     void *soft_bits_user;
+    signal_status_cb sigstat_cb;
+    void *sigstat_user;
+    bool sigstat_last;
 
     /* Internal slot equivalents (called directly, not via Qt). */
     void FreqOffsetEstimateSlot(double freq_offset_est);
@@ -145,6 +157,7 @@ private:
 
     /* feedIQ mixing state */
     double feediq_phase;
+    HilbertUSB feediq_usb;
 
     /* Per-instance state — were static locals in JAERO (single-instance).
      * Must be per-instance for multi-channel parallel demodulation. */

@@ -75,6 +75,11 @@ typedef struct {
     /* Which channel indices belong to this band */
     int channel_indices[MAX_CHANNELS];
     int num_channels;
+
+    /* Modulation family — channels of different family never share a band
+     * even if their frequency ranges are compatible. Prevents asymmetric
+     * centroid placement when distinct spectral clusters are nearby. */
+    int family;
 } band_state_t;
 
 /* ------------------------------------------------------------------ */
@@ -230,6 +235,21 @@ static double target_output_rate(channel_type_t type) {
     }
 }
 
+/* Group channels that should share a stage-1 band. MSK 600/1200 share
+ * (same spectral cluster, same modulation family). OQPSK 10500 and 8400
+ * have different RRC α so they're kept separate — also avoids pulling
+ * the band centroid between two distinct clusters. */
+static int modulation_family(channel_type_t type) {
+    switch (type) {
+    case CHAN_STDC_EGC:   return 0;  /* BPSK */
+    case CHAN_AERO_600:
+    case CHAN_AERO_1200:  return 1;  /* MSK */
+    case CHAN_AERO_10500: return 2;  /* OQPSK α=1.0 */
+    case CHAN_AERO_8400:  return 3;  /* OQPSK α=0.6 */
+    default: return -1;
+    }
+}
+
 /* Target intermediate rate for stage-1 based on channel type.
  * OQPSK channels need a narrower intermediate band for cleaner stage-2
  * decimation; MSK/BPSK channels tolerate a wider intermediate band. */
@@ -272,8 +292,8 @@ static double signal_bandwidth(channel_type_t type) {
     case CHAN_STDC_EGC:   return 4800.0;
     case CHAN_AERO_600:   return 6000.0;
     case CHAN_AERO_1200:  return 6000.0;
-    case CHAN_AERO_10500: return 15000.0;
-    case CHAN_AERO_8400:  return 14000.0;
+    case CHAN_AERO_10500: return 21000.0;  /* α=1.0 → fb*(1+α) = 21 kHz */
+    case CHAN_AERO_8400:  return 14000.0;   /* α=0.6 → fb*(1+α) = 13.4 kHz */
     default: return 0;
     }
 }
@@ -334,8 +354,10 @@ static int init_band(band_state_t *b, double center_freq,
  * s1_decim is the stage-1 decimation factor chosen by the caller
  * to guarantee exact total decimation (s1 * s2 = total). */
 static int find_or_create_band(channelizer_t *ch, double freq,
+                                channel_type_t type,
                                 int channel_slot, int s1_decim) {
     double actual_inter = ch->samp_rate / (double)s1_decim;
+    int family = modulation_family(type);
 
     /* Tolerance: channel must fit within ±40% of intermediate BW
      * around the band center */
@@ -345,6 +367,8 @@ static int find_or_create_band(channelizer_t *ch, double freq,
     for (int b = 0; b < ch->num_bands; b++) {
         band_state_t *bd = &ch->bands[b];
         if (!bd->active) continue;
+        /* Channels of different modulation family never share a band */
+        if (bd->family != family) continue;
         /* Check rate compatibility (must have same s1_decim) */
         if (fabs(bd->intermediate_rate - actual_inter) >
             actual_inter * 0.01) continue;
@@ -367,6 +391,8 @@ static int find_or_create_band(channelizer_t *ch, double freq,
 
     if (init_band(bd, freq, ch->samp_rate, s1_decim) != 0)
         return -1;
+
+    bd->family = family;
 
     /* Set NCO: shift band center to DC */
     bd->nco_freq = freq - ch->center_freq;
@@ -430,7 +456,7 @@ int channelizer_add_channel(channelizer_t *ch, double freq,
     if (s2_decim < 1) s2_decim = 1;
 
     /* Find or create stage-1 band with exact s1_decim */
-    int bidx = find_or_create_band(ch, freq, slot, s1_decim);
+    int bidx = find_or_create_band(ch, freq, type, slot, s1_decim);
     if (bidx < 0) return -1;
     c->band_idx = bidx;
 
@@ -658,6 +684,58 @@ void channelizer_adjust_center(channelizer_t *ch, double offset_hz) {
     fprintf(stderr,
             "Channelizer: adjusted center by %.0f Hz (new: %.3f MHz)\n",
             offset_hz, ch->center_freq / 1e6);
+}
+
+void channelizer_finalize(channelizer_t *ch) {
+    if (!ch) return;
+
+    /* For each band, compute the centroid of its channel frequencies,
+     * update the band center, and rebalance each channel's per-channel
+     * NCO to the new center. This avoids placing any channel at DC
+     * (where DC offset and 1/f noise cause artifacts) and symmetrizes
+     * filter response across the channel cluster. */
+    for (int b = 0; b < ch->num_bands; b++) {
+        band_state_t *bd = &ch->bands[b];
+        if (!bd->active || bd->num_channels == 0) continue;
+
+        /* Compute centroid from member channels */
+        double freq_sum = 0;
+        double freq_lo = 1e18, freq_hi = 0;
+        for (int ci = 0; ci < bd->num_channels; ci++) {
+            int cidx = bd->channel_indices[ci];
+            channel_state_t *cs = &ch->channels[cidx];
+            double ch_freq = bd->center_freq + cs->nco_freq;
+            freq_sum += ch_freq;
+            if (ch_freq < freq_lo) freq_lo = ch_freq;
+            if (ch_freq > freq_hi) freq_hi = ch_freq;
+        }
+        double centroid = freq_sum / bd->num_channels;
+        double shift = centroid - bd->center_freq;
+        if (fabs(shift) < 1.0) continue;  /* already centered */
+
+        /* Update band NCO to mix the new centroid to DC */
+        bd->nco_freq += shift;
+        double phase_inc = -2.0 * M_PI * bd->nco_freq / ch->samp_rate;
+        bd->nco_phasor  = cosf((float)phase_inc) + sinf((float)phase_inc) * I;
+        bd->nco_current = 1.0f;
+        bd->center_freq = centroid;
+
+        /* Rebalance each channel's stage-2 NCO relative to new centroid */
+        double inter_rate = bd->intermediate_rate;
+        for (int ci = 0; ci < bd->num_channels; ci++) {
+            int cidx = bd->channel_indices[ci];
+            channel_state_t *cs = &ch->channels[cidx];
+            cs->nco_freq -= shift;
+            double cph_inc = -2.0 * M_PI * cs->nco_freq / inter_rate;
+            cs->nco_phasor  = cosf((float)cph_inc) + sinf((float)cph_inc) * I;
+            cs->nco_current = 1.0f;
+        }
+
+        fprintf(stderr,
+                "Channelizer: band %d NCO centered at %.3f MHz "
+                "(mix point only; channels remain at their spec frequencies %.3f-%.3f MHz)\n",
+                b, centroid / 1e6, freq_lo / 1e6, freq_hi / 1e6);
+    }
 }
 
 void channelizer_destroy(channelizer_t *ch) {

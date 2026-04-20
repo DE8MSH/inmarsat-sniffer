@@ -26,6 +26,9 @@ static bool vec_contains(const std::vector<int> &v, int val)
     return false;
 }
 
+/* forward decl — parses a 12-byte P-channel C-channel assignment SU */
+CChannelAssignmentItem AeroL_CreateCAssignmentItem(const std::vector<uint8_t> &su);
+
 //R channel
 
 int RISUData::findisuitem(RISUItem &anisuitem)
@@ -828,6 +831,8 @@ AeroL::AeroL()
     acars_user=NULL;
     decoded_callback=NULL;
     decoded_user=NULL;
+    cassign_callback=NULL;
+    cassign_user=NULL;
 
     //install parser
     parserisu = new ParserISU();
@@ -1351,6 +1356,17 @@ std::vector<uint8_t> &AeroL::Decode(std::vector<short> &bits, bool soft)//0 bit 
                                 {
                                 case User_data_ISU_RLS_P_T_channel:
                                     isudata.update(vec_mid(infofield,k*12,10));
+                                    break;
+                                case C_channel_assignment_distress:
+                                case C_channel_assignment_flight_safety:
+                                case C_channel_assignment_other_safety:
+                                case C_channel_assignment_non_safety:
+                                    if(cassign_callback) {
+                                        CChannelAssignmentItem item =
+                                            AeroL_CreateCAssignmentItem(vec_mid(infofield,k*12,12));
+                                        item.type = (uint8_t)message;
+                                        cassign_callback(item, cassign_user);
+                                    }
                                     break;
                                 default:
                                     if((message&0xC0)==0xC0)

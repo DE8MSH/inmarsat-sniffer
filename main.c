@@ -86,6 +86,7 @@ typedef struct {
     unsigned long drops;
     double mse;    /* signal quality: lower = better, 0-1 range */
     double ebno;   /* Eb/No in dB: higher = better signal */
+    int is_locked; /* demod sigstat — true = frame sync, independent of msgs */
 } chan_web_info_t;
 
 void web_get_channel_info(chan_web_info_t *out, int *n) {
@@ -100,15 +101,19 @@ void web_get_channel_info(chan_web_info_t *out, int *n) {
         out[i].drops = atomic_load(&jaero_chans[i].drops);
         /* Read MSE and Eb/No from whichever demod is active */
         double mse = 1.0, ebno = 0;
+        int locked = 0;
         if (jaero_chans[i].pmsk) {
             mse = jaero_pmsk_get_mse(jaero_chans[i].pmsk);
             ebno = jaero_pmsk_get_ebno(jaero_chans[i].pmsk);
+            locked = jaero_pmsk_is_locked(jaero_chans[i].pmsk);
         } else if (jaero_chans[i].oqpsk_cont) {
             mse = jaero_oqpsk_cont_get_mse(jaero_chans[i].oqpsk_cont);
             ebno = jaero_oqpsk_cont_get_ebno(jaero_chans[i].oqpsk_cont);
+            locked = jaero_oqpsk_cont_is_locked(jaero_chans[i].oqpsk_cont);
         }
         out[i].mse = mse;
         out[i].ebno = ebno;
+        out[i].is_locked = locked;
     }
     *n = count;
 }
@@ -308,6 +313,7 @@ int verbose = 0;
 int live = 0;
 iq_format_t iq_format = FMT_CI8;
 op_mode_t op_mode = MODE_AUTO;
+int skip_c_channel = 0;       /* --skip-c-channel: don't decode OQPSK 8400 C-channel */
 char *satellite_name = NULL;
 
 /* SDR selection */
@@ -658,6 +664,25 @@ static void stdc_bits_cb(const float *soft_bits, int num_bits, void *user) {
  * full decode chain (Viterbi → descramble → RS → ISU → ACARS validator).
  * acarsitem.valid was checked inside jaero_demod.cpp, so `data` is ACARS
  * userdata — pass through libacars for human-readable output. */
+/* Ground station channel assignment — aircraft requested a voice/data
+ * session and got assigned a specific C-channel frequency pair. Types:
+ *   0x31 = distress, 0x32 = flight safety, 0x33 = other safety, 0x34 = non-safety */
+static void on_cassign(int channel_id, uint8_t type,
+                        uint32_t aes_id, uint8_t ges_id,
+                        double rx_mhz, double tx_mhz, void *user) {
+    (void)user;
+    const char *type_str;
+    switch (type) {
+    case 0x31: type_str = "DISTRESS"; break;
+    case 0x32: type_str = "SAFETY";   break;
+    case 0x33: type_str = "OTHER_SAFETY"; break;
+    case 0x34: type_str = "NON_SAFETY"; break;
+    default:   type_str = "UNKNOWN"; break;
+    }
+    fprintf(stderr, "\n[C-ASSIGN ch%d AES:%06X GES:%02X] %s  RX=%.4f MHz  TX=%.4f MHz\n",
+            channel_id, aes_id, ges_id, type_str, rx_mhz, tx_mhz);
+}
+
 static void jaero_acars_data_cb(const uint8_t *data, int len,
                                   int channel_id,
                                   uint32_t aes_id, uint8_t ges_id,
@@ -722,6 +747,16 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                             channel_id, aes_id, ges_id,
                             amsg->reg[0] ? amsg->reg : "?",
                             amsg->label, amsg->block_id ? amsg->block_id : '?');
+
+                    /* Aircraft DB lookup by AES ID — shows description + operator */
+                    aircraft_info_t info;
+                    if (aircraft_db_lookup_by_aes(aes_id, &info)) {
+                        const char *desc = info.description ? info.description : info.type;
+                        if (desc && *desc) fprintf(stderr, "  %s", desc);
+                        if (info.operator_ && *info.operator_)
+                            fprintf(stderr, " / %s", info.operator_);
+                    }
+
                     if (amsg->txt && amsg->txt[0])
                         fprintf(stderr, "\n  %s", amsg->txt);
                     fprintf(stderr, "\n");
@@ -892,8 +927,13 @@ static void channel_output_cb(int channel_id, channel_type_t type,
 #ifdef HAVE_ZMQ
     if (zmq_enabled) {
         double output_rate = channelizer_output_rate(channelizer, channel_id);
+        /* Per-baud JAERO default audio center: 1000 Hz for MSK, 8000 Hz for OQPSK.
+         * This makes our ZMQ output match what JAERO expects by default for each
+         * modulation type (matches SDRReceiver-to-JAERO wiring conventions). */
+        double audio_center = (type == CHAN_AERO_10500 ||
+                                type == CHAN_AERO_8400) ? 8000.0 : 1000.0;
         if (output_rate > 0)
-            zmq_audio_send(channel_id, samples, num_samples, output_rate);
+            zmq_audio_send(channel_id, samples, num_samples, output_rate, audio_center);
     }
 #endif
 
@@ -985,9 +1025,12 @@ static void channel_output_cb(int channel_id, channel_type_t type,
             /* JAERO's continuous MskDemodulator + AeroL (P-channel mode) */
             jc->pmsk = jaero_pmsk_create(output_rate, (double)baud,
                                           channel_id, jaero_bits_cb, NULL);
-            if (jc->pmsk)
+            if (jc->pmsk) {
                 jaero_pmsk_set_acars_callback(jc->pmsk,
                                                jaero_acars_data_cb, NULL);
+                jaero_pmsk_set_cassign_callback(jc->pmsk,
+                                                  on_cassign, NULL);
+            }
 
             fprintf(stderr, "[PMSK ch%d] baud=%d rate=%.0f (continuous P-channel)\n",
                     channel_id, baud, output_rate);
@@ -1118,16 +1161,19 @@ int main(int argc, char **argv) {
             errx(1, "Failed to start web dashboard");
     }
 
-    /* Basestation (SBS) output for aircraft positions. */
-    if (basestation_enabled) {
+    /* Aircraft DB — always load if available. Used for:
+     *   - AES → aircraft type/operator enrichment on ACARS output
+     *   - Registration → ICAO hex lookup for SBS basestation output */
+    {
         const char *dbpath = aircraft_db_path ? aircraft_db_path
                                                : aircraft_db_default_path();
-        if (!dbpath || aircraft_db_load(dbpath) < 0) {
-            fprintf(stderr, "basestation: no aircraft database found\n"
+        if (dbpath && aircraft_db_load(dbpath) < 0 && basestation_enabled) {
+            fprintf(stderr, "aircraft_db: no database found\n"
                     "  Run: inmarsat-sniffer --update-db\n"
                     "  Or specify: --aircraft-db=PATH\n");
-            /* Continue without DB — positions still go out, just no ICAO hex. */
         }
+    }
+    if (basestation_enabled) {
         if (basestation_init(basestation_endpoint) != 0)
             errx(1, "Failed to start basestation output");
     }
@@ -1180,6 +1226,9 @@ int main(int argc, char **argv) {
             const channel_def_t *cd = &sat->channels[i];
             if (op_mode == MODE_AERO && cd->type == CHAN_STDC_EGC) continue;
             if (op_mode == MODE_STDC && cd->type != CHAN_STDC_EGC) continue;
+            /* Keep C-channels in the lo/hi span so auto center/rate covers them
+             * even when --skip-c-channel skips the demods. Avoids breaking
+             * playback of captures made without the flag. */
             if (cd->frequency < lo) lo = cd->frequency;
             if (cd->frequency > hi) hi = cd->frequency;
         }
@@ -1353,6 +1402,8 @@ int main(int argc, char **argv) {
                 continue;
             if (op_mode == MODE_STDC && cd->type != CHAN_STDC_EGC)
                 continue;
+            if (skip_c_channel && cd->type == CHAN_AERO_8400)
+                continue;
             /* OQPSK channels included for ZMQ audio output */
 
             if (channelizer_add_channel(channelizer, cd->frequency,
@@ -1372,6 +1423,9 @@ int main(int argc, char **argv) {
         long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
         fprintf(stderr, "Channelizer: %d channels active (%ld CPU cores available)\n",
                 added, ncpu > 0 ? ncpu : 1);
+
+        /* Rebalance bands so no channel sits at DC (where offset/1/f noise hurt) */
+        channelizer_finalize(channelizer);
 
         /* Initialize STD-C demod/decode chain if we have an EGC channel */
         for (int i = 0; i < sat->num_channels; i++) {

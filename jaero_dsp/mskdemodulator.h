@@ -12,6 +12,7 @@
 #include <complex>
 #include <cstdint>
 #include "fftrwrapper.h"
+#include "hilbert_usb.h"
 
 class CoarseFreqEstimate;
 
@@ -60,12 +61,21 @@ public:
     /* Callback registration. */
     void setSoftBitsCallback(msk_soft_bits_cb cb, void *user);
 
+    /* Signal status callback — fires when mse crosses signalthreshold. */
+    typedef void (*signal_status_cb)(bool signal_good, void *user);
+    void setSignalStatusCallback(signal_status_cb cb, void *user) {
+        sigstat_cb = cb; sigstat_user = user; sigstat_last = true;
+    }
+
     double getMSE() const { return mse; }
     double getEbNo() const { return ebnomeasure ? ebnomeasure->EbNo : 0; }
 
 private:
     msk_soft_bits_cb soft_bits_cb;
     void *soft_bits_user;
+    signal_status_cb sigstat_cb;
+    void *sigstat_user;
+    bool sigstat_last;
 
     void CenterFreqChangedSlot(double freq_center);
     void FreqOffsetEstimateSlot(double freq_offset_est);
@@ -149,6 +159,7 @@ private:
 
     /* feedIQ mixing state (per-instance) */
     double feediq_phase;
+    HilbertUSB feediq_usb;
 
     /* Per-instance — was static in JAERO (single-instance) */
     int freqest_countdown;

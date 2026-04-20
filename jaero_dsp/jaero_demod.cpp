@@ -266,6 +266,9 @@ struct jaero_pmsk_demod {
     void *user;
     jaero_acars_cb acars_cb;
     void *acars_user;
+    jaero_cassign_cb cassign_cb;
+    void *cassign_user;
+    bool sigstat_good;
 };
 
 static void pmsk_bits_adapter(const short *bits, int num_bits, void *ctx)
@@ -293,6 +296,14 @@ static void pmsk_acars_adapter(ACARSItem &acarsitem, void *ctx)
     }
 }
 
+static void pmsk_sigstat_adapter(bool signal_good, void *ctx)
+{
+    jaero_pmsk_demod_t *d = (jaero_pmsk_demod_t *)ctx;
+    d->sigstat_good = signal_good;
+    if (!signal_good && d->aerol)
+        d->aerol->LostSignal();
+}
+
 jaero_pmsk_demod_t *jaero_pmsk_create(double sample_rate, double symbol_rate,
                                        int channel_id,
                                        jaero_soft_bits_cb cb, void *user)
@@ -303,6 +314,9 @@ jaero_pmsk_demod_t *jaero_pmsk_create(double sample_rate, double symbol_rate,
     d->user = user;
     d->acars_cb = NULL;
     d->acars_user = NULL;
+    d->cassign_cb = NULL;
+    d->cassign_user = NULL;
+    d->sigstat_good = false;
     d->demod = new MskDemodulator();
 
     /* AeroL in CONTINUOUS (P-channel) mode */
@@ -323,6 +337,7 @@ jaero_pmsk_demod_t *jaero_pmsk_create(double sample_rate, double symbol_rate,
 
     d->demod->setSettings(s);
     d->demod->setSoftBitsCallback(pmsk_bits_adapter, d);
+    d->demod->setSignalStatusCallback(pmsk_sigstat_adapter, d);
     d->demod->setAFC(true);  /* on by default in JAERO GUI */
 
     return d;
@@ -360,6 +375,24 @@ void jaero_pmsk_set_acars_callback(jaero_pmsk_demod_t *d,
         d->aerol->setACARSCallback(pmsk_acars_adapter, d);
 }
 
+static void pmsk_cassign_adapter(CChannelAssignmentItem &item, void *ctx)
+{
+    jaero_pmsk_demod_t *d = (jaero_pmsk_demod_t *)ctx;
+    if (d->cassign_cb)
+        d->cassign_cb(d->channel_id, item.type, item.AESID, item.GESID,
+                      item.receive_freq, item.transmit_freq, d->cassign_user);
+}
+
+void jaero_pmsk_set_cassign_callback(jaero_pmsk_demod_t *d,
+                                       jaero_cassign_cb cb, void *user)
+{
+    if (!d) return;
+    d->cassign_cb = cb;
+    d->cassign_user = user;
+    if (d->aerol)
+        d->aerol->setCChannelAssignmentCallback(pmsk_cassign_adapter, d);
+}
+
 double jaero_pmsk_get_mse(jaero_pmsk_demod_t *d) {
     if (!d || !d->demod) return 1.0;
     return d->demod->getMSE();
@@ -368,6 +401,10 @@ double jaero_pmsk_get_mse(jaero_pmsk_demod_t *d) {
 double jaero_pmsk_get_ebno(jaero_pmsk_demod_t *d) {
     if (!d || !d->demod) return 0;
     return d->demod->getEbNo();
+}
+
+int jaero_pmsk_is_locked(jaero_pmsk_demod_t *d) {
+    return (d && d->sigstat_good) ? 1 : 0;
 }
 
 /* ============================================================
@@ -384,6 +421,9 @@ struct jaero_oqpsk_cont_demod {
     void *user;
     jaero_acars_cb acars_cb;
     void *acars_user;
+    jaero_cassign_cb cassign_cb;
+    void *cassign_user;
+    bool sigstat_good;
 };
 
 static void oqpsk_cont_aerol_acars_adapter(ACARSItem &acarsitem, void *ctx)
@@ -413,6 +453,18 @@ static void oqpsk_cont_bits_adapter(const short *bits, int num_bits, void *ctx)
     }
 }
 
+/* Signal status callback: reset AeroL when OQPSK demod loses lock.
+ * Matches JAERO's SignalStatus→LostSignal connection. Without this,
+ * AeroL accumulates noise bits during signal dropouts and gets stuck
+ * searching for frame sync in garbage. */
+static void oqpsk_cont_sigstat_adapter(bool signal_good, void *ctx)
+{
+    jaero_oqpsk_cont_demod_t *d = (jaero_oqpsk_cont_demod_t *)ctx;
+    d->sigstat_good = signal_good;
+    if (!signal_good && d->aerol)
+        d->aerol->LostSignal();
+}
+
 jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double symbol_rate,
                                                     int channel_id,
                                                     jaero_soft_bits_cb cb, void *user)
@@ -423,6 +475,9 @@ jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double sym
     d->user        = user;
     d->acars_cb    = NULL;
     d->acars_user  = NULL;
+    d->cassign_cb  = NULL;
+    d->cassign_user = NULL;
+    d->sigstat_good = false;
     d->demod       = new OqpskDemodulator();
 
     /* AeroL: continuous (non-burst) mode — 10500 baud forward link is
@@ -443,6 +498,7 @@ jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double sym
 
     d->demod->setSettings(s);
     d->demod->setSoftBitsCallback(oqpsk_cont_bits_adapter, d);
+    d->demod->setSignalStatusCallback(oqpsk_cont_sigstat_adapter, d);
     d->demod->setAFC(true);  /* on by default in JAERO GUI */
 
     return d;
@@ -480,6 +536,24 @@ void jaero_oqpsk_cont_set_acars_callback(jaero_oqpsk_cont_demod_t *d,
         d->aerol->setACARSCallback(oqpsk_cont_aerol_acars_adapter, d);
 }
 
+static void oqpsk_cont_cassign_adapter(CChannelAssignmentItem &item, void *ctx)
+{
+    jaero_oqpsk_cont_demod_t *d = (jaero_oqpsk_cont_demod_t *)ctx;
+    if (d->cassign_cb)
+        d->cassign_cb(d->channel_id, item.type, item.AESID, item.GESID,
+                      item.receive_freq, item.transmit_freq, d->cassign_user);
+}
+
+void jaero_oqpsk_cont_set_cassign_callback(jaero_oqpsk_cont_demod_t *d,
+                                              jaero_cassign_cb cb, void *user)
+{
+    if (!d) return;
+    d->cassign_cb = cb;
+    d->cassign_user = user;
+    if (d->aerol)
+        d->aerol->setCChannelAssignmentCallback(oqpsk_cont_cassign_adapter, d);
+}
+
 double jaero_oqpsk_cont_get_mse(jaero_oqpsk_cont_demod_t *d) {
     if (!d || !d->demod) return 1.0;
     return d->demod->getMSE();
@@ -488,6 +562,10 @@ double jaero_oqpsk_cont_get_mse(jaero_oqpsk_cont_demod_t *d) {
 double jaero_oqpsk_cont_get_ebno(jaero_oqpsk_cont_demod_t *d) {
     if (!d || !d->demod) return 0;
     return d->demod->getEbNo();
+}
+
+int jaero_oqpsk_cont_is_locked(jaero_oqpsk_cont_demod_t *d) {
+    return (d && d->sigstat_good) ? 1 : 0;
 }
 
 } /* extern "C" */

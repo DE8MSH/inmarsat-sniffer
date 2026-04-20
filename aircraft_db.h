@@ -11,6 +11,8 @@
 #ifndef __AIRCRAFT_DB_H__
 #define __AIRCRAFT_DB_H__
 
+#include <stdint.h>
+
 /*
  * Load aircraft database from CSV file.
  * Expected format: icao_hex;registration;... (semicolon-separated)
@@ -24,6 +26,21 @@ int aircraft_db_load(const char *path);
  * or NULL if not found.
  */
 const char *aircraft_db_lookup(const char *registration);
+
+/*
+ * Look up aircraft info by ICAO hex / AES ID (24-bit as hex string or uint).
+ * Returns 1 on found, 0 on not found. All output pointers may be NULL.
+ * Strings are owned by the DB (valid until next load/destroy).
+ */
+typedef struct {
+    const char *registration;
+    const char *type;        /* ICAO type code, e.g., "B738" */
+    const char *description; /* Aircraft full description, e.g., "Boeing 737-800" */
+    const char *operator_;   /* Airline/operator */
+} aircraft_info_t;
+
+int aircraft_db_lookup_by_hex(const char *hex6, aircraft_info_t *out);
+int aircraft_db_lookup_by_aes(uint32_t aes_id, aircraft_info_t *out);
 
 /*
  * Free all database resources.

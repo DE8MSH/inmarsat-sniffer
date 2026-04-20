@@ -21,6 +21,13 @@ typedef void (*jaero_soft_bits_cb)(const unsigned char *bits, int num_bits, int 
 typedef void (*jaero_acars_cb)(const uint8_t *data, int len, int channel_id,
                                uint32_t aes_id, uint8_t ges_id, void *user);
 
+/* C-channel assignment (voice/data session setup). Ground station tells
+ * aircraft to use a specific RX/TX frequency for a call. */
+typedef void (*jaero_cassign_cb)(int channel_id, uint8_t type,
+                                 uint32_t aes_id, uint8_t ges_id,
+                                 double rx_mhz, double tx_mhz,
+                                 void *user);
+
 typedef struct jaero_msk_demod jaero_msk_demod_t;
 typedef struct jaero_oqpsk_demod jaero_oqpsk_demod_t;
 typedef struct jaero_pmsk_demod jaero_pmsk_demod_t;  /* continuous MSK for P-channel */
@@ -40,8 +47,10 @@ void jaero_pmsk_feed_iq(jaero_pmsk_demod_t *d, const double *iq_interleaved, int
 void jaero_pmsk_feed_audio(jaero_pmsk_demod_t *d, const int16_t *audio, int num_samples);
 void jaero_pmsk_destroy(jaero_pmsk_demod_t *d);
 void jaero_pmsk_set_acars_callback(jaero_pmsk_demod_t *d, jaero_acars_cb cb, void *user);
+void jaero_pmsk_set_cassign_callback(jaero_pmsk_demod_t *d, jaero_cassign_cb cb, void *user);
 double jaero_pmsk_get_mse(jaero_pmsk_demod_t *d);
 double jaero_pmsk_get_ebno(jaero_pmsk_demod_t *d);
+int    jaero_pmsk_is_locked(jaero_pmsk_demod_t *d);
 
 /* Lightweight AeroL-only decoder (no MSK demod, just frame decode).
  * Feed soft bits from an external demod via jaero_msk_feed_soft_bits(). */
@@ -59,8 +68,10 @@ void jaero_oqpsk_cont_feed_audio(jaero_oqpsk_cont_demod_t *d, const int16_t *aud
 void jaero_oqpsk_cont_feed_iq(jaero_oqpsk_cont_demod_t *d, const double *iq_interleaved, int num_samples);
 void jaero_oqpsk_cont_destroy(jaero_oqpsk_cont_demod_t *d);
 void jaero_oqpsk_cont_set_acars_callback(jaero_oqpsk_cont_demod_t *d, jaero_acars_cb cb, void *user);
+void jaero_oqpsk_cont_set_cassign_callback(jaero_oqpsk_cont_demod_t *d, jaero_cassign_cb cb, void *user);
 double jaero_oqpsk_cont_get_mse(jaero_oqpsk_cont_demod_t *d);
 double jaero_oqpsk_cont_get_ebno(jaero_oqpsk_cont_demod_t *d);
+int    jaero_oqpsk_cont_is_locked(jaero_oqpsk_cont_demod_t *d);
 
 #ifdef __cplusplus
 }

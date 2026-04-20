@@ -846,6 +846,7 @@ public:
 typedef void (*aerol_dcd_cb)(bool status, void *user);
 typedef void (*aerol_acars_cb)(ACARSItem &acarsitem, void *user);
 typedef void (*aerol_decoded_cb)(const uint8_t *data, int len, void *user);
+typedef void (*aerol_cassign_cb)(CChannelAssignmentItem &item, void *user);
 
 class AeroL
 {
@@ -876,6 +877,9 @@ public:
         parserisu->setACARSCallback(cb, user);
     }
     void setDecodedCallback(aerol_decoded_cb cb, void *user) { decoded_callback = cb; decoded_user = user; }
+    void setCChannelAssignmentCallback(aerol_cassign_cb cb, void *user) {
+        cassign_callback = cb; cassign_user = user;
+    }
 
 private:
     std::vector<uint8_t> &Decode(std::vector<short> &bits, bool soft = false);
@@ -959,6 +963,8 @@ private:
     void *acars_user;
     aerol_decoded_cb decoded_callback;
     void *decoded_user;
+    aerol_cassign_cb cassign_callback;
+    void *cassign_user;
 };
 
 #endif // AEROL_H

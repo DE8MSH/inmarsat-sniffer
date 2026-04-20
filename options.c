@@ -36,6 +36,7 @@ extern int live;
 extern iq_format_t iq_format;
 extern FILE *in_file;
 extern op_mode_t op_mode;
+extern int skip_c_channel;
 extern char *satellite_name;
 
 #ifdef HAVE_SOAPYSDR
@@ -137,6 +138,8 @@ static void usage(int exitcode) {
 "    --satellite=SAT         satellite designator: 4F3, 3F5, AF1, F1\n"
 "                             (required for live, determines frequencies)\n"
 "    --mode=MODE             operating mode: auto (default), aero, stdc, full\n"
+"    --skip-c-channel        skip OQPSK 8400 C-channel demods (voice/data bursts,\n"
+"                             rarely carry ACARS; saves ~50% CPU on low-power hosts)\n"
 "\n"
 "Output:\n"
 "    --web[=PORT]            enable live web dashboard (default port: 8888)\n"
@@ -234,6 +237,7 @@ void parse_options(int argc, char **argv) {
         OPT_MQTT_TOPIC,
         OPT_JAERO_FORMAT,
         OPT_AGC,
+        OPT_SKIP_C_CHANNEL,
     };
 
     static const struct option longopts[] = {
@@ -280,6 +284,7 @@ void parse_options(int argc, char **argv) {
         { "mqtt-topic",         required_argument, NULL, OPT_MQTT_TOPIC },
         { "jaero-format",       optional_argument, NULL, OPT_JAERO_FORMAT },
         { "agc",                no_argument,       NULL, OPT_AGC },
+        { "skip-c-channel",     no_argument,       NULL, OPT_SKIP_C_CHANNEL },
         { "ppm",                required_argument, NULL, 'p' },
         { NULL, 0, NULL, 0 },
     };
@@ -530,6 +535,10 @@ void parse_options(int argc, char **argv) {
             agc_enabled = 1;
             break;
 
+        case OPT_SKIP_C_CHANNEL:
+            skip_c_channel = 1;
+            break;
+
         case OPT_UDP: {
             if (udp_count >= UDP_MAX)
                 errx(1, "Too many --udp endpoints (max %d)", UDP_MAX);
@@ -627,6 +636,10 @@ void parse_options(int argc, char **argv) {
                         iq_format = FMT_CF32;
                     else if (strcasecmp(ext, ".ci16") == 0 || strcasecmp(ext, ".cs16") == 0)
                         iq_format = FMT_CI16;
+                    else if (strcasecmp(ext, ".cu8") == 0)
+                        iq_format = FMT_CU8;
+                    else if (strcasecmp(ext, ".ci8") == 0 || strcasecmp(ext, ".cs8") == 0)
+                        iq_format = FMT_CI8;
                 }
             }
         }
