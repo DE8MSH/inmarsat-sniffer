@@ -292,24 +292,31 @@ Channels are automatically filtered based on your SDR's actual bandwidth -- the 
 
 ## Current status
 
-**Working and verified live on 4F3 (98°W):**
+**Satellites verified live:**
+
+- **4F3 (98°W, AOR-W)** -- primary test satellite; thousands of MSK P-channel ACARS, hundreds of aircraft, plus OQPSK 10500 ch13-16 on SDRplay/RTL-SDR/B210
+- **3F5 (54°W, AOR-E)** -- verified on-air with RTL-SDR at auto-selected 1.92 MHz. MSK ACARS, CPDLC, and aircraft DB enrichment all working. Mix of transatlantic military (USAF C-17A) and South American/Canadian commercial traffic
+- AF1 / Alphasat (25°E) and F1 (143°E) are not reachable from North America; AF1 STD-C carrier corrected to 1537.100 MHz per external reference but awaits on-air test from Europe
+
+**Working and verified live:**
 
 - 600/1200 baud MSK P-channel ACARS decode (thousands of messages across hundreds of aircraft, 100% CRC pass)
 - 10500 baud OQPSK forward link -- continuous OqpskDemodulator with Hilbert USB demod, aircraft decoded across ch13-16 on both SDRplay and RTL-SDR
 - ADS-C position extraction (oceanic aircraft tracked across North/South Atlantic, Americas)
-- CPDLC controller-pilot messages decoded via libacars
+- CPDLC controller-pilot messages decoded via libacars (incl. UNABLE/WILCO responses)
 - SBS basestation feed verified with remote aggregator
 - Per-channel threading with zero drops over multi-hour runs
 - Web dashboard with live aircraft markers, trail history, sigstat-driven lock indicator
 - ZMQ audio output -- external JAERO locks and decodes the exact same audio our internal demod consumes (SDRReceiver-compatible Hilbert USB wiring)
 - Aircraft DB enrichment -- registration, type, and operator shown alongside ACARS output
-- RTL-SDR Blog V4 and SDRplay RSPdx/RSP1A both tested
+- RTL-SDR Blog V4, SDRplay RSPdx/RSP1A, and Ettus USRP B210 all tested live
 - Capture replay via `-f FILE` matches live decode counts
 
 **Plumbed, awaiting traffic or verification:**
 
 - 8400 baud OQPSK C-channel -- continuous OqpskDemodulator wired, but 8400 channels are burst voice/data sessions and may be silent for extended periods. Skip with `--skip-c-channel` on low-power hosts
 - STD-C EGC decode -- DBPSK/Viterbi path active; hasn't synced in testing on 4F3 at author's location. May need stronger signal or different satellite. AF1 (25E) STD-C carrier corrected to 1537.100 MHz but untested on-air from here
+- F1 (143°E) channel plan -- came from a forum listing, not cross-referenced against an authoritative source; no confirmation available from North America
 - HackRF on 4F3 -- decoding at default gains with bias tee; still characterising optimal gain staging
 
 **Not implemented:**
