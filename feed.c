@@ -252,61 +252,82 @@ void feed_aero_message(const aero_message_t *msg) {
     char escaped[4096];
     json_escape(escaped, sizeof(escaped), msg->text, msg->text_len);
 
-    double ts = now_unix();
-    char time_utc[32];
-    time_t t = (time_t)ts;
-    struct tm tm;
-    gmtime_r(&t, &tm);
-    strftime(time_utc, sizeof(time_utc), "%Y-%m-%d %H:%M:%S", &tm);
-
-    const char *sat = satellite_name ? satellite_name : "";
+    /* Split timestamp into sec / usec for JAERO JSONdump schema */
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    long sec  = (long)ts.tv_sec;
+    long usec = ts.tv_nsec / 1000;
 
     extern char *station_id;
     const char *sid = station_id ? station_id : "";
 
-    /* JAERO/dumpvdl2-compatible JSON field names */
-    int len;
-    if (msg->has_position && !isnan(msg->lat) && !isnan(msg->lon)) {
-        len = snprintf(buf, sizeof(buf),
-            "{\"source\":\"inmarsat-sniffer\","
-            "\"station_id\":\"%s\","
-            "\"satellite\":\"%s\","
-            "\"TIME\":%.0f,\"TIME_UTC\":\"%s\","
-            "\"NONACARS\":false,"
-            "\"REG\":\"%s\",\"FLIGHT\":\"%s\","
-            "\"MODE\":\"%c\",\"LABEL\":\"%s\","
-            "\"BI\":\"%c\",\"TAK\":\"%c\","
-            "\"MESSAGE\":\"%s\","
-            "\"lat\":%.6f,\"lon\":%.6f,\"alt\":%d,"
-            "\"channel\":%d}",
-            sid, sat, ts, time_utc,
-            msg->reg, msg->flight,
-            msg->mode ? msg->mode : ' ', msg->label,
-            msg->block_id ? msg->block_id : ' ',
-            msg->ack ? msg->ack : ' ',
-            escaped,
-            msg->lat, msg->lon, msg->alt_ft,
-            msg->channel_id);
-    } else {
-        len = snprintf(buf, sizeof(buf),
-            "{\"source\":\"inmarsat-sniffer\","
-            "\"station_id\":\"%s\","
-            "\"satellite\":\"%s\","
-            "\"TIME\":%.0f,\"TIME_UTC\":\"%s\","
-            "\"NONACARS\":false,"
-            "\"REG\":\"%s\",\"FLIGHT\":\"%s\","
-            "\"MODE\":\"%c\",\"LABEL\":\"%s\","
-            "\"BI\":\"%c\",\"TAK\":\"%c\","
-            "\"MESSAGE\":\"%s\","
-            "\"channel\":%d}",
-            sid, sat, ts, time_utc,
-            msg->reg, msg->flight,
-            msg->mode ? msg->mode : ' ', msg->label,
-            msg->block_id ? msg->block_id : ' ',
-            msg->ack ? msg->ack : ' ',
-            escaped,
-            msg->channel_id);
-    }
+    /* Reg field — strip our leading dot to match JAERO JSONdump convention
+     * ("reg": "OO-SFC", not ".OO-SFC"). */
+    const char *reg = msg->reg;
+    if (reg && reg[0] == '.') reg++;
+
+    /* AES/GES hex, uppercase, zero-padded */
+    char aes_hex[8], ges_hex[4];
+    snprintf(aes_hex, sizeof(aes_hex), "%06X", msg->aes_id & 0xFFFFFFu);
+    snprintf(ges_hex, sizeof(ges_hex), "%02X", msg->ges_id & 0xFFu);
+
+    /* src / dst swap on direction: downlink=aircraft->ground means src=aes,
+     * dst=ges. uplink (our typical P-channel decode) means src=ges, dst=aes.
+     * Matches JAERO mainwindow.cpp JSONdump src/dst assignment. */
+    const char *src_addr = msg->downlink ? aes_hex : ges_hex;
+    const char *src_type = msg->downlink ? "Aircraft Earth Station" : "Ground Earth Station";
+    const char *dst_addr = msg->downlink ? ges_hex : aes_hex;
+    const char *dst_type = msg->downlink ? "Ground Earth Station" : "Aircraft Earth Station";
+
+    /* Build nested JSONdump-compliant object. Fields match JAERO 1.0.4.11+
+     * mainwindow.cpp ACARSitem_to_HumanText() "JSONdump" branch. The
+     * arinc622 sub-object, when present, is the libacars proto-tree JSON
+     * serialisation — the author-provided schema in issue #10 shows an
+     * arinc622 object; we pass through whatever libacars produced rather
+     * than reshaping, since Airframes/Acarshub already consume libacars
+     * output via dumpvdl2. */
+    const char *arinc = msg->arinc622_json;
+    int len = snprintf(buf, sizeof(buf),
+        "{"
+            "\"app\":{\"name\":\"inmarsat-sniffer\",\"ver\":\"VFO%02d\"},"
+            "\"isu\":{"
+                "\"acars\":{"
+                    "\"mode\":\"%c\","
+                    "\"ack\":\"%c\","
+                    "\"blk_id\":\"%c\","
+                    "\"label\":\"%.2s\","
+                    "\"reg\":\"%s\""
+                    "%s%s%s"       /* optional flight */
+                    ",\"msg_text\":\"%s\""
+                    "%s%s"         /* optional ",\"arinc622\":{...}" */
+                "},"
+                "\"refno\":\"%02X\","
+                "\"qno\":\"%02X\","
+                "\"src\":{\"addr\":\"%s\",\"type\":\"%s\"},"
+                "\"dst\":{\"addr\":\"%s\",\"type\":\"%s\"}"
+            "},"
+            "\"t\":{\"sec\":%ld,\"usec\":%ld}"
+            "%s%s%s"               /* optional station */
+        "}",
+        msg->channel_id,
+        msg->mode ? msg->mode : ' ',
+        msg->ack  ? msg->ack  : ' ',
+        msg->block_id ? msg->block_id : ' ',
+        msg->label,
+        reg ? reg : "",
+        (msg->flight[0] ? ",\"flight\":\"" : ""),
+        (msg->flight[0] ? msg->flight      : ""),
+        (msg->flight[0] ? "\""             : ""),
+        escaped,
+        (arinc ? ",\"arinc622\":" : ""),
+        (arinc ? arinc            : ""),
+        msg->refno, msg->qno,
+        src_addr, src_type,
+        dst_addr, dst_type,
+        sec, usec,
+        (sid[0] ? ",\"station\":\""     : ""),
+        (sid[0] ? sid                    : ""),
+        (sid[0] ? "\""                   : ""));
 
     if (len > 0 && len < (int)sizeof(buf))
         send_json(buf, len);

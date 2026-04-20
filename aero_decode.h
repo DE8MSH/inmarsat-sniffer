@@ -27,6 +27,13 @@ typedef struct {
     uint64_t timestamp;
     uint32_t aes_id;        /* AES (aircraft) ID from ISU header */
     uint8_t ges_id;         /* GES (ground station) ID from ISU header */
+    uint8_t qno;            /* Q-number from ISU header */
+    uint8_t refno;          /* reference number from ISU header */
+    int downlink;           /* 1 = aircraft->ground, 0 = ground->aircraft */
+    /* libacars proto tree serialised as JSON (for JSONdump "arinc622"
+     * field). NULL if libacars found nothing useful. Memory owned by
+     * caller, must remain valid for the duration of the callback. */
+    const char *arinc622_json;
     /* Raw ACARS frame for libacars parsing */
     const uint8_t *raw_data;
     int raw_len;

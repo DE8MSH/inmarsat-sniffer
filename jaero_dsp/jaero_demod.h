@@ -19,7 +19,9 @@ extern "C" {
 
 typedef void (*jaero_soft_bits_cb)(const unsigned char *bits, int num_bits, int channel_id, void *user);
 typedef void (*jaero_acars_cb)(const uint8_t *data, int len, int channel_id,
-                               uint32_t aes_id, uint8_t ges_id, void *user);
+                               uint32_t aes_id, uint8_t ges_id,
+                               uint8_t qno, uint8_t refno, int downlink,
+                               void *user);
 
 /* C-channel assignment (voice/data session setup). Ground station tells
  * aircraft to use a specific RX/TX frequency for a call. */

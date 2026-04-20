@@ -245,6 +245,7 @@ static void chan_init_thread(jaero_chan_t *jc)
 #include <libacars/libacars.h>
 #include <libacars/acars.h>
 #include <libacars/adsc.h>
+#include <libacars/arinc.h>
 #include <libacars/cpdlc.h>
 #include <libacars/list.h>
 #include <libacars/reassembly.h>
@@ -686,6 +687,7 @@ static void on_cassign(int channel_id, uint8_t type,
 static void jaero_acars_data_cb(const uint8_t *data, int len,
                                   int channel_id,
                                   uint32_t aes_id, uint8_t ges_id,
+                                  uint8_t qno, uint8_t refno, int downlink,
                                   void *user) {
     (void)user;
     atomic_fetch_add(&stat_aero_msgs, 1);
@@ -774,6 +776,9 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                     outmsg.channel_id = channel_id;
                     outmsg.aes_id = aes_id;
                     outmsg.ges_id = ges_id;
+                    outmsg.qno = qno;
+                    outmsg.refno = refno;
+                    outmsg.downlink = downlink;
                     outmsg.lat = NAN;
                     outmsg.lon = NAN;
                     outmsg.alt_ft = -1;
@@ -790,6 +795,24 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                             tl = sizeof(outmsg.text) - 1;
                         memcpy(outmsg.text, amsg->txt, tl);
                         outmsg.text_len = tl;
+                    }
+
+                    /* Serialise the libacars proto tree as JSON so feed.c
+                     * can emit it in the JSONdump "arinc622" sub-object.
+                     * Only include it if there's something more than the
+                     * plain ACARS wrapper (ARINC-622 application payload,
+                     * ADS-C, CPDLC, etc). vstring lives on this stack,
+                     * released after all consumers have run. */
+                    la_vstring *arinc_vs = NULL;
+                    if (la_proto_tree_find_protocol(tree, &la_DEF_arinc_message) ||
+                        la_proto_tree_find_adsc(tree) ||
+                        la_proto_tree_find_cpdlc(tree)) {
+                        arinc_vs = la_vstring_new();
+                        if (arinc_vs) {
+                            la_proto_tree_format_json(arinc_vs, tree);
+                            if (arinc_vs->str && arinc_vs->str[0])
+                                outmsg.arinc622_json = arinc_vs->str;
+                        }
                     }
 
                     /* Position extraction. Prefer structured ADS-C (ARINC
@@ -870,6 +893,8 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                     feed_aero_message(&outmsg);
                     if (web_enabled)
                         web_add_aero(&outmsg);
+
+                    if (arinc_vs) la_vstring_destroy(arinc_vs, true);
                 }
             }
             la_proto_tree_destroy(tree);
@@ -1248,30 +1273,43 @@ int main(int argc, char **argv) {
         }
         if (samp_rate == 0) {
             double span = hi - lo;
-            samp_rate = span * 1.2;
-            /* Per-SDR optimized defaults:
-             *   RTL-SDR: 1.536 MHz (clean 32x decimation, best SNR on 8-bit
-             *            with RTL-SDR's auto-adjusting IF filter)
-             *   SDRplay: 3.072 MHz (clean 64x decimation, native ADC rate,
-             *            matches SDRReceiver)
-             *   HackRF:  6 MHz (HackRF's wider fixed IF means low rates alias
-             *            noise — 6 MHz is near its native sweet spot)
-             *   Others:  2.4 MHz floor */
-            double min_rate = 2400000;
+
+            /* Prefer the known-good (satellite, SDR) rate from
+             * SDRReceiver configs or live testing — set on satellite_t when
+             * we have authoritative data. Falls back to max(span*1.2, floor). */
+            double preferred = 0;
 #ifdef HAVE_RTLSDR
-            if (rtl_dev_index >= 0) min_rate = 1536000; else
+            if (rtl_dev_index >= 0) preferred = sat->preferred_rate_rtl;
 #endif
 #ifdef HAVE_SDRPLAY
-            if (sdrplay_serial != NULL) min_rate = 3072000; else
+            if (sdrplay_serial != NULL) preferred = sat->preferred_rate_sdrplay;
 #endif
 #ifdef HAVE_HACKRF
-            if (hackrf_serial != NULL) min_rate = 6000000; else
+            if (hackrf_serial != NULL) preferred = sat->preferred_rate_hackrf;
 #endif
-            { /* default 2400000 */ }
-            if (samp_rate < min_rate)
-                samp_rate = min_rate;
+
+            if (preferred > 0 && preferred >= span) {
+                samp_rate = preferred;
+            } else {
+                samp_rate = span * 1.2;
+                double min_rate = 2400000;
+#ifdef HAVE_RTLSDR
+                if (rtl_dev_index >= 0) min_rate = 1536000; else
+#endif
+#ifdef HAVE_SDRPLAY
+                if (sdrplay_serial != NULL) min_rate = 3072000; else
+#endif
+#ifdef HAVE_HACKRF
+                if (hackrf_serial != NULL) min_rate = 6000000; else
+#endif
+                { /* default 2400000 */ }
+                if (samp_rate < min_rate)
+                    samp_rate = min_rate;
+            }
             if (verbose)
-                fprintf(stderr, "Auto sample rate: %.3f MHz\n", samp_rate / 1e6);
+                fprintf(stderr, "Auto sample rate: %.3f MHz (span %.3f MHz, %s)\n",
+                        samp_rate / 1e6, span / 1e6,
+                        (preferred > 0 && preferred >= span) ? "preferred" : "auto");
         }
     }
 
