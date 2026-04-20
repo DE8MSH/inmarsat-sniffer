@@ -89,10 +89,11 @@ static const channel_def_t channels_3f5[] = {
     { 1546853237.0, CHAN_AERO_8400, 14 },
 };
 
-/* I4-AF1 (25E, IOR) -- Indian Ocean
- * Frequencies from SDRReceiver 25E config. */
+/* Alphasat / Inmarsat-4A F4 (25E, EMEA/IOR)
+ * Aero frequencies from SDRReceiver 25E config.
+ * STD-C EGC from thebaldgeek.github.io/stdc.html (1537.10 MHz). */
 static const channel_def_t channels_af1[] = {
-    { 1537950000.0, CHAN_STDC_EGC,   0 },
+    { 1537100000.0, CHAN_STDC_EGC,   0 },
 
     /* Aero 600 baud channels */
     { 1545005146.0, CHAN_AERO_600,  1 },
@@ -187,14 +188,14 @@ static const satellite_t satellites[] = {
         .freq_max = 1546853237.0,
     },
     {
-        .name = "I4-AF1",
+        .name = "Alphasat (I-4A F4)",
         .designator = "AF1",
         .position = 25.0,
-        .region = "IOR",
-        .stdc_egc_freq = 1537950000.0,
+        .region = "EMEA",
+        .stdc_egc_freq = 1537100000.0,
         .channels = channels_af1,
         .num_channels = ARRAY_SIZE(channels_af1),
-        .freq_min = 1537950000.0,
+        .freq_min = 1537100000.0,
         .freq_max = 1546178430.0,
     },
     {
@@ -216,14 +217,17 @@ const satellite_t *satellite_lookup(const char *designator) {
         if (strcasecmp(satellites[i].designator, designator) == 0)
             return &satellites[i];
     }
-    /* Geographic position aliases (matches SDRReceiver naming) */
+    /* Geographic position + common-name aliases */
     struct { const char *alias; const char *designator; } aliases[] = {
         { "98W",      "4F3" },  /* Inmarsat 4-F3 Americas */
         { "54W",      "3F5" },  /* Inmarsat 3-F5 Atlantic */
-        { "25E",      "AF1" },  /* Alphasat / I-4 AF1 Indian Ocean */
+        { "25E",      "AF1" },  /* Alphasat / I-4A F4 EMEA */
+        { "AF4",      "AF1" },  /* canonical — Inmarsat designates as I-4A F4 */
+        { "4AF4",     "AF1" },
+        { "alphasat", "AF1" },
         { "143E",     "F1"  },  /* Inmarsat 4-F1 Pacific */
         { "143.5E",   "F1"  },
-        { "alphasat", "AF1" },
+        { "4F1",      "F1"  },
     };
     for (size_t i = 0; i < ARRAY_SIZE(aliases); i++) {
         if (strcasecmp(aliases[i].alias, designator) == 0) {
