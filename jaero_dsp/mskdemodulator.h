@@ -12,6 +12,7 @@
 #include <complex>
 #include <cstdint>
 #include "fftrwrapper.h"
+#include "hilbert_usb.h"
 
 class CoarseFreqEstimate;
 
@@ -158,6 +159,7 @@ private:
 
     /* feedIQ mixing state (per-instance) */
     double feediq_phase;
+    HilbertUSB feediq_usb;
 
     /* Per-instance — was static in JAERO (single-instance) */
     int freqest_countdown;

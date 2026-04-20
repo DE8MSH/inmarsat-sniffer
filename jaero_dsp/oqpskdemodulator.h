@@ -8,6 +8,7 @@
 
 #include "DSP.h"
 #include "coarsefreqestimate.h"
+#include "hilbert_usb.h"
 #include <vector>
 #include <complex>
 #include <cstdint>
@@ -156,6 +157,7 @@ private:
 
     /* feedIQ mixing state */
     double feediq_phase;
+    HilbertUSB feediq_usb;
 
     /* Per-instance state — were static locals in JAERO (single-instance).
      * Must be per-instance for multi-channel parallel demodulation. */
