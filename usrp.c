@@ -135,6 +135,16 @@ void *usrp_backend_setup(const char *serial)
     if (uhd_usrp_set_rx_freq(usrp, &tune_request, 0, &tune_result) != UHD_ERROR_NONE)
         errx(1, "USRP set_rx_freq");
 
+    /* B210 and similar direct-conversion USRPs have a DC spike at the tuned
+     * center frequency. Without automatic DC-offset correction the demod
+     * constellation collapses to a DC point, variance goes to ~0, and our
+     * Eb/No calc hits its 50 dB clamp on every channel while decoding
+     * nothing. Also enable automatic I/Q imbalance correction. */
+    if (uhd_usrp_set_rx_dc_offset_enabled(usrp, true, 0) != UHD_ERROR_NONE)
+        warnx("USRP set_rx_dc_offset_enabled");
+    if (uhd_usrp_set_rx_iq_balance_enabled(usrp, true, 0) != UHD_ERROR_NONE)
+        warnx("USRP set_rx_iq_balance_enabled");
+
     fprintf(stderr, "USRP: serial=%s sr=%.0f freq=%.0f gain=%d\n",
             serial ? serial : "(any)", samp_rate, center_freq, usrp_gain_val);
 
@@ -147,9 +157,15 @@ void *usrp_stream_thread(void *arg)
     uhd_rx_streamer_handle rx;
     uhd_rx_metadata_handle md;
     size_t channel = 0, max_samples, rx_samples;
+    /* B210 has a 12-bit ADC (plus noise floor ~8 dB NF at L-band). Using
+     * sc8 on the wire would quantise to 8 bits, throwing away ~24 dB of
+     * dynamic range. sc16 preserves all 12 ADC bits; cpu_format=fc32 lets
+     * the rest of our pipeline consume floats the same way rtlsdr/bladerf
+     * backends do. USB 2.0 bandwidth is still plenty at <10 MB/s for our
+     * sample rates. */
     uhd_stream_args_t stream_args = {
-        .cpu_format = "sc8",
-        .otw_format = "sc8",
+        .cpu_format = "fc32",
+        .otw_format = "sc16",
         .args = "",
         .channel_list = &channel,
         .n_channels = 1,
@@ -168,9 +184,10 @@ void *usrp_stream_thread(void *arg)
     uhd_rx_streamer_issue_stream_cmd(rx, &start_cmd);
 
     while (running) {
-        sample_buf_t *s = malloc(sizeof(*s) + max_samples * 2);
+        /* fc32 = 2 floats per IQ sample = 8 bytes/sample */
+        sample_buf_t *s = malloc(sizeof(*s) + max_samples * sizeof(float) * 2);
         if (!s) break;
-        s->format = SAMPLE_FMT_INT8;
+        s->format = SAMPLE_FMT_FLOAT;
         void *buf = s->samples;
         uhd_rx_streamer_recv(rx, &buf, max_samples, &md, 3.0, false, &rx_samples);
         uhd_rx_metadata_error_code_t err_code;
