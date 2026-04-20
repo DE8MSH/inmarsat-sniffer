@@ -67,9 +67,15 @@ public:
     }
 
 private:
-    static float *taps_ptr() {
-        static float t[TAPS];
-        return t;
+    /* Hilbert coefficients: h[n] = (1 - cos(PI*(n - L/2))) / (PI*(n - L/2)) for n != L/2.
+     * Half the taps are zero (every other one) and the nonzero taps are
+     * antisymmetric: h[L-1-n] = -h[n]. We precompute only the nonzero odd-index
+     * coefficients and use the antisymmetry to do one multiply per *pair* —
+     * cutting the inner loop from 125 multiplies to 31. */
+    static constexpr int PAIRS = 31;   /* 62 nonzero taps / 2 */
+    static float *coeffs() {
+        static float c[PAIRS];
+        return c;
     }
     static bool& designed() { static bool d = false; return d; }
 
@@ -81,6 +87,11 @@ private:
 
     static void design() {
         if (designed()) return;
+        /* Hilbert kernel: h[n] = (1 - cos(PI*(n-62))) / (PI*(n-62)).
+         * Zero at every EVEN n (cos(PI*even) = 1 -> numerator 0). Nonzero at
+         * odd n. After SDRReceiver's reversal and normalisation, antisymmetry
+         * h[124-n] = -h[n] still holds. So 62 nonzero taps form 31 pairs:
+         *   (1, 123), (3, 121), ..., (61, 63). */
         float tmp[TAPS];
         float sumsq = 0;
         for (int n = 0; n < TAPS; n++) {
@@ -91,22 +102,32 @@ private:
             }
             sumsq += tmp[n] * tmp[n];
         }
-        float gain = std::sqrt(sumsq);
-        float *t = taps_ptr();
-        for (int i = 0; i < TAPS; i++)
-            t[i] = tmp[TAPS - i - 1] / gain;
+        float norm = std::sqrt(sumsq);
+        /* reversed kernel rev[i] = tmp[TAPS-1-i] / norm; extract the 31 pair
+         * coefficients from the left half (odd indices 1..61). */
+        float *c = coeffs();
+        for (int p = 0; p < PAIRS; p++) {
+            int left = 2 * p + 1;                    /* 1, 3, ..., 61 */
+            c[p] = tmp[TAPS - 1 - left] / norm;      /* rev[left] */
+        }
         designed() = true;
     }
 
+    /* Compute Hilbert convolution using antisymmetric pairing:
+     *   sum = sum_p c[p] * (hist[left] - hist[right])
+     * where (left, right) pair odd coefficient positions (1..61, 123..63).
+     * 31 multiplies instead of 125, identical result. */
     inline float hilbert_step(float im) {
         hist[hidx] = im;
         hidx = (hidx + 1) % TAPS;
-        const float *t = taps_ptr();
+        const float *c = coeffs();
         float sum = 0;
-        int idx = hidx;
-        for (int i = 0; i < TAPS; i++) {
-            sum += t[i] * hist[idx];
-            idx = (idx + 1) % TAPS;
+        for (int p = 0; p < PAIRS; p++) {
+            int left_idx  = hidx + (2 * p + 1);      /* 1..61 */
+            int right_idx = hidx + (TAPS - 2 - 2*p); /* 123..63 */
+            if (left_idx  >= TAPS) left_idx  -= TAPS;
+            if (right_idx >= TAPS) right_idx -= TAPS;
+            sum += c[p] * (hist[left_idx] - hist[right_idx]);
         }
         return sum;
     }
