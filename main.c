@@ -313,6 +313,7 @@ int verbose = 0;
 int live = 0;
 iq_format_t iq_format = FMT_CI8;
 op_mode_t op_mode = MODE_AUTO;
+int skip_c_channel = 0;       /* --skip-c-channel: don't decode OQPSK 8400 C-channel */
 char *satellite_name = NULL;
 
 /* SDR selection */
@@ -1225,6 +1226,9 @@ int main(int argc, char **argv) {
             const channel_def_t *cd = &sat->channels[i];
             if (op_mode == MODE_AERO && cd->type == CHAN_STDC_EGC) continue;
             if (op_mode == MODE_STDC && cd->type != CHAN_STDC_EGC) continue;
+            /* Keep C-channels in the lo/hi span so auto center/rate covers them
+             * even when --skip-c-channel skips the demods. Avoids breaking
+             * playback of captures made without the flag. */
             if (cd->frequency < lo) lo = cd->frequency;
             if (cd->frequency > hi) hi = cd->frequency;
         }
@@ -1397,6 +1401,8 @@ int main(int argc, char **argv) {
             if (op_mode == MODE_AERO && cd->type == CHAN_STDC_EGC)
                 continue;
             if (op_mode == MODE_STDC && cd->type != CHAN_STDC_EGC)
+                continue;
+            if (skip_c_channel && cd->type == CHAN_AERO_8400)
                 continue;
             /* OQPSK channels included for ZMQ audio output */
 
