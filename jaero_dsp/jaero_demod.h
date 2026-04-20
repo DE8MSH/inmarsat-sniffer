@@ -50,6 +50,7 @@ void jaero_pmsk_set_acars_callback(jaero_pmsk_demod_t *d, jaero_acars_cb cb, voi
 void jaero_pmsk_set_cassign_callback(jaero_pmsk_demod_t *d, jaero_cassign_cb cb, void *user);
 double jaero_pmsk_get_mse(jaero_pmsk_demod_t *d);
 double jaero_pmsk_get_ebno(jaero_pmsk_demod_t *d);
+int    jaero_pmsk_is_locked(jaero_pmsk_demod_t *d);
 
 /* Lightweight AeroL-only decoder (no MSK demod, just frame decode).
  * Feed soft bits from an external demod via jaero_msk_feed_soft_bits(). */
@@ -70,6 +71,7 @@ void jaero_oqpsk_cont_set_acars_callback(jaero_oqpsk_cont_demod_t *d, jaero_acar
 void jaero_oqpsk_cont_set_cassign_callback(jaero_oqpsk_cont_demod_t *d, jaero_cassign_cb cb, void *user);
 double jaero_oqpsk_cont_get_mse(jaero_oqpsk_cont_demod_t *d);
 double jaero_oqpsk_cont_get_ebno(jaero_oqpsk_cont_demod_t *d);
+int    jaero_oqpsk_cont_is_locked(jaero_oqpsk_cont_demod_t *d);
 
 #ifdef __cplusplus
 }

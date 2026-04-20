@@ -86,6 +86,7 @@ typedef struct {
     unsigned long drops;
     double mse;    /* signal quality: lower = better, 0-1 range */
     double ebno;   /* Eb/No in dB: higher = better signal */
+    int is_locked; /* demod sigstat — true = frame sync, independent of msgs */
 } chan_web_info_t;
 
 void web_get_channel_info(chan_web_info_t *out, int *n) {
@@ -100,15 +101,19 @@ void web_get_channel_info(chan_web_info_t *out, int *n) {
         out[i].drops = atomic_load(&jaero_chans[i].drops);
         /* Read MSE and Eb/No from whichever demod is active */
         double mse = 1.0, ebno = 0;
+        int locked = 0;
         if (jaero_chans[i].pmsk) {
             mse = jaero_pmsk_get_mse(jaero_chans[i].pmsk);
             ebno = jaero_pmsk_get_ebno(jaero_chans[i].pmsk);
+            locked = jaero_pmsk_is_locked(jaero_chans[i].pmsk);
         } else if (jaero_chans[i].oqpsk_cont) {
             mse = jaero_oqpsk_cont_get_mse(jaero_chans[i].oqpsk_cont);
             ebno = jaero_oqpsk_cont_get_ebno(jaero_chans[i].oqpsk_cont);
+            locked = jaero_oqpsk_cont_is_locked(jaero_chans[i].oqpsk_cont);
         }
         out[i].mse = mse;
         out[i].ebno = ebno;
+        out[i].is_locked = locked;
     }
     *n = count;
 }

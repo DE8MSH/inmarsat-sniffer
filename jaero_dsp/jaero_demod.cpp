@@ -268,6 +268,7 @@ struct jaero_pmsk_demod {
     void *acars_user;
     jaero_cassign_cb cassign_cb;
     void *cassign_user;
+    bool sigstat_good;
 };
 
 static void pmsk_bits_adapter(const short *bits, int num_bits, void *ctx)
@@ -298,6 +299,7 @@ static void pmsk_acars_adapter(ACARSItem &acarsitem, void *ctx)
 static void pmsk_sigstat_adapter(bool signal_good, void *ctx)
 {
     jaero_pmsk_demod_t *d = (jaero_pmsk_demod_t *)ctx;
+    d->sigstat_good = signal_good;
     if (!signal_good && d->aerol)
         d->aerol->LostSignal();
 }
@@ -312,6 +314,9 @@ jaero_pmsk_demod_t *jaero_pmsk_create(double sample_rate, double symbol_rate,
     d->user = user;
     d->acars_cb = NULL;
     d->acars_user = NULL;
+    d->cassign_cb = NULL;
+    d->cassign_user = NULL;
+    d->sigstat_good = false;
     d->demod = new MskDemodulator();
 
     /* AeroL in CONTINUOUS (P-channel) mode */
@@ -398,6 +403,10 @@ double jaero_pmsk_get_ebno(jaero_pmsk_demod_t *d) {
     return d->demod->getEbNo();
 }
 
+int jaero_pmsk_is_locked(jaero_pmsk_demod_t *d) {
+    return (d && d->sigstat_good) ? 1 : 0;
+}
+
 /* ============================================================
  * Continuous OQPSK demodulator (Aero H/H+/L, 10500 baud forward link)
  * Uses OqpskDemodulator (not BurstOqpskDemodulator).
@@ -414,6 +423,7 @@ struct jaero_oqpsk_cont_demod {
     void *acars_user;
     jaero_cassign_cb cassign_cb;
     void *cassign_user;
+    bool sigstat_good;
 };
 
 static void oqpsk_cont_aerol_acars_adapter(ACARSItem &acarsitem, void *ctx)
@@ -450,6 +460,7 @@ static void oqpsk_cont_bits_adapter(const short *bits, int num_bits, void *ctx)
 static void oqpsk_cont_sigstat_adapter(bool signal_good, void *ctx)
 {
     jaero_oqpsk_cont_demod_t *d = (jaero_oqpsk_cont_demod_t *)ctx;
+    d->sigstat_good = signal_good;
     if (!signal_good && d->aerol)
         d->aerol->LostSignal();
 }
@@ -464,6 +475,9 @@ jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double sym
     d->user        = user;
     d->acars_cb    = NULL;
     d->acars_user  = NULL;
+    d->cassign_cb  = NULL;
+    d->cassign_user = NULL;
+    d->sigstat_good = false;
     d->demod       = new OqpskDemodulator();
 
     /* AeroL: continuous (non-burst) mode — 10500 baud forward link is
@@ -548,6 +562,10 @@ double jaero_oqpsk_cont_get_mse(jaero_oqpsk_cont_demod_t *d) {
 double jaero_oqpsk_cont_get_ebno(jaero_oqpsk_cont_demod_t *d) {
     if (!d || !d->demod) return 0;
     return d->demod->getEbNo();
+}
+
+int jaero_oqpsk_cont_is_locked(jaero_oqpsk_cont_demod_t *d) {
+    return (d && d->sigstat_good) ? 1 : 0;
 }
 
 } /* extern "C" */

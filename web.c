@@ -273,6 +273,7 @@ static int build_json(char *buf, int maxlen) {
             unsigned long drops;
             double mse;
             double ebno;
+            int is_locked;
         } chan_web_info_t;
 
         /* Gather channel info without holding main's lock */
@@ -287,9 +288,10 @@ static int build_json(char *buf, int maxlen) {
             double age = now_unix() - chinfo[i].last_msg_time;
             if (chinfo[i].last_msg_time < 1) age = -1;
             pos += snprintf(buf + pos, maxlen - pos,
-                "{\"ch\":%d,\"baud\":%d,\"msgs\":%lu,\"age\":%.0f,\"mse\":%.3f,\"ebno\":%.1f}",
+                "{\"ch\":%d,\"baud\":%d,\"msgs\":%lu,\"age\":%.0f,\"mse\":%.3f,\"ebno\":%.1f,\"lock\":%d}",
                 chinfo[i].channel_id, chinfo[i].baud_rate,
-                chinfo[i].msg_count, age, chinfo[i].mse, chinfo[i].ebno);
+                chinfo[i].msg_count, age, chinfo[i].mse, chinfo[i].ebno,
+                chinfo[i].is_locked);
         }
         pos += snprintf(buf + pos, maxlen - pos, "]");
     }
@@ -430,7 +432,8 @@ static const char HTML_PAGE[] =
 "  var html='';"
 "  function fmtN(n){return n>=10000?(n/1000).toFixed(1)+'k':n>=1000?(n/1000).toFixed(1)+'k':''+n}"
 "  d.channels.forEach(function(c){"
-"    var active=c.msgs>0&&c.age>=0&&c.age<120;"
+"    var hasRecent=c.msgs>0&&c.age>=0&&c.age<120;"
+"    var active=!!c.lock||hasRecent;"
 "    if(active)locked++;"
 "    var baud=c.baud>=8400?(c.baud/1000+'k OQPSK'):(c.baud+' MSK');"
 "    var dot=active?'\\u25CF':'\\u25CB';"
