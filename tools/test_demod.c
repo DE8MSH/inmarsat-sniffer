@@ -20,9 +20,11 @@ static void bits_cb(const unsigned char *bits, int num_bits, int channel_id, voi
     bits_count += num_bits;
 }
 
-static void acars_cb(const uint8_t *data, int len, int channel_id, void *user)
+static void acars_cb(const uint8_t *data, int len, int channel_id,
+                     uint32_t aes_id, uint8_t ges_id,
+                     uint8_t qno, uint8_t refno, int downlink, void *user)
 {
-    (void)user;
+    (void)user; (void)aes_id; (void)ges_id; (void)qno; (void)refno; (void)downlink;
     acars_count++;
     fprintf(stderr, "[DECODED ch%d] %d bytes:", channel_id, len);
     for (int i = 0; i < len && i < 80; i++) {

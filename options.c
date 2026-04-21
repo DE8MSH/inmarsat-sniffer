@@ -365,7 +365,9 @@ void parse_options(int argc, char **argv) {
             break;
 
         case 'r':
-            samp_rate = atof(optarg);
+            /* Strip a leading '=' so both "-r=10000000" and "-r 10000000" work.
+             * Otherwise optarg="=10000000" -> atof() returns 0 and forces auto */
+            samp_rate = atof(optarg[0] == '=' ? optarg + 1 : optarg);
             break;
 
         case 'c':
