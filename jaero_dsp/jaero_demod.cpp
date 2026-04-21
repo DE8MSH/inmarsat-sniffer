@@ -508,12 +508,7 @@ jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double sym
      * 10.5 kHz locking bandwidth. feedAudio path expects signal at freq_center.
      * feedIQ wrapper mixes IQ → audio at freq_center (same as ZMQ output). */
     s.freq_center              = 8000.0;
-    /* Wider AFC lockingbw for 10500: OQPSK carriers in the Aero H+ forward
-     * link can be assigned anywhere within the block allocation, not exactly
-     * on the nominal channel frequency. Captures from baldgeek show active
-     * carriers ±10 kHz off nominal. ±15 kHz gives AFC room to pull them in.
-     * Matches the complaint in jontio/JAERO PR #95 about narrow lockingbw. */
-    s.lockingbw                = (symbol_rate <= 8400) ? 5000.0 : 30000.0;
+    s.lockingbw                = (symbol_rate <= 8400) ? 5000.0 : 10500.0;
     s.coarsefreqest_fft_power  = 14;
     s.signalthreshold          = 0.8; /* raised from JAERO default 0.65 — accepts noisier constellations */
 
