@@ -21,46 +21,45 @@
  * becomes available.
  */
 
-/* I4-F3 (98W, AORW) -- Americas region
- * Frequencies from SDRReceiver 98W config (verified against live signals). */
+/* I4-F3 (98W, AORW/AMER) -- Americas region
+ * Validated against 98W references using an Airspy R2 and a commercial L-Band dish */
 static const channel_def_t channels_4f3[] = {
     /* STD-C EGC (NCS common) -- channel 0 by convention */
-    { 1537700000.0, CHAN_STDC_EGC,   0 },
+    { 1537700000.0, CHAN_STDC_EGC,   0 },   /* AORW, NCS,        Laurentides CA */
 
-    /* Aero 600 baud channels */
-    { 1545021000.0, CHAN_AERO_600,  1 },
-    { 1545051000.0, CHAN_AERO_600,  2 },
-    { 1545061000.0, CHAN_AERO_600,  3 },
-    { 1545066000.0, CHAN_AERO_600,  4 },
-    { 1545081000.0, CHAN_AERO_600,  5 },
-    { 1545086000.0, CHAN_AERO_600,  6 },
-    { 1545091000.0, CHAN_AERO_600,  7 },
-    { 1545101000.0, CHAN_AERO_600,  8 },
-    { 1545111000.0, CHAN_AERO_600,  9 },
-    { 1545171000.0, CHAN_AERO_600, 10 },
-    { 1545176000.0, CHAN_AERO_600, 11 },
+    /* Aero-L 600 baud P-channels / Psmc */
+    { 1545020000.0, CHAN_AERO_600,  1 },    /* AORW, SITA,       Laurentides CA */
+    { 1545050000.0, CHAN_AERO_600,  2 },    /* AORW, SITA,       Laurentides CA */
+    { 1545060000.0, CHAN_AERO_600,  3 },    /* AMER, ARINC/SITA, Paumalu HI     */
+    { 1545065000.0, CHAN_AERO_600,  4 },    /* AMER, ARINC/SITA, Paumalu HI     */
+    { 1545080000.0, CHAN_AERO_600,  5 },    /* AORW, SITA,       Laurentides CA */
+    { 1545085000.0, CHAN_AERO_600,  6 },    /* AMER, ARINC/SITA, Paumalu HI     */
+    { 1545090000.0, CHAN_AERO_600,  7 },    /* AORW, SITA,       Laurentides CA */
+    { 1545100000.0, CHAN_AERO_600,  8 },    /* AORW, ARINC,      Laurentides CA */
+    { 1545110000.0, CHAN_AERO_600,  9 },    /* AMER, ARINC/SITA, Paumalu HI     */
+    { 1545170000.0, CHAN_AERO_600, 10 },    /* AORW, ARINC,      Laurentides CA */
+    { 1545175000.0, CHAN_AERO_600, 11 },    /* AORW, ARINC,      Laurentides CA */
+    { 1545205000.0, CHAN_AERO_600, 12 },    /* AORW, ARINC,      Laurentides CA */
 
-    /* Aero 1200 baud channels */
-    { 1545076000.0, CHAN_AERO_1200, 12 },
+    /* Aero-L 1200 baud */
+    { 1545075000.0, CHAN_AERO_1200, 13 },   /* AMER, ARINC/SITA, Paumalu HI     */
 
-    /* Aero 10500 baud channels */
-    { 1545995000.0, CHAN_AERO_10500, 13 },
-    { 1546010000.0, CHAN_AERO_10500, 14 },
-    { 1546055000.0, CHAN_AERO_10500, 15 },
-    { 1546070000.0, CHAN_AERO_10500, 16 },
+    /* Aero-H+ 10500 baud */
+    { 1546005000.0, CHAN_AERO_10500, 14 },  /* AMER, ARINC/SITA, Paumalu HI     */
+    { 1546020000.0, CHAN_AERO_10500, 15 },  /* AMER, ARINC/SITA, Paumalu HI     */
+    { 1546062500.0, CHAN_AERO_10500, 16 },  /* AORW, ARINC/SITA, Laurentides CA */
+    { 1546077500.0, CHAN_AERO_10500, 17 },  /* AORW, ARINC/SITA, Laurentides CA */
 
-    /* Aero 8400 baud (C-channel, voice + data) */
-    { 1546135300.0, CHAN_AERO_8400, 17 },
-    { 1546140500.0, CHAN_AERO_8400, 18 },
-    { 1546145700.0, CHAN_AERO_8400, 19 },
-    { 1546150300.0, CHAN_AERO_8400, 20 },
-    { 1546155500.0, CHAN_AERO_8400, 21 },
-    { 1546160600.0, CHAN_AERO_8400, 22 },
-    { 1546166300.0, CHAN_AERO_8400, 23 },
-    { 1546171430.0, CHAN_AERO_8400, 24 },
-    { 1546176430.0, CHAN_AERO_8400, 25 },
-    { 1546181430.0, CHAN_AERO_8400, 26 },
-    { 1546186430.0, CHAN_AERO_8400, 27 },
+    /* Aero 8400 baud C-channel (AMBE voice + data) */
+    { 1542937500.0, CHAN_AERO_8400, 18 },   /* AMER, ARINC/SITA, Paumalu HI     */
+    { 1542942500.0, CHAN_AERO_8400, 19 },   /* AMER, ARINC/SITA, Paumalu HI     */
+    { 1542947500.0, CHAN_AERO_8400, 20 },   /* AMER, ARINC/SITA, Paumalu HI     */
+    { 1542952500.0, CHAN_AERO_8400, 21 },   /* AMER, ARINC/SITA, Paumalu HI     */
+    { 1542957500.0, CHAN_AERO_8400, 22 },   /* AMER, ARINC/SITA, Paumalu HI     */
+    { 1542977500.0, CHAN_AERO_8400, 23 },   /* AORW, ARINC/SITA, Laurentides CA */
+    { 1542982500.0, CHAN_AERO_8400, 24 },   /* AORW, ARINC/SITA, Laurentides CA */
+    { 1542987500.0, CHAN_AERO_8400, 25 },   /* AORW, ARINC/SITA, Laurentides CA */
+    { 1542992500.0, CHAN_AERO_8400, 26 },   /* AORW, ARINC/SITA, Laurentides CA */
 };
 
 /* I3-F5 (54W, AORE) -- Atlantic East
