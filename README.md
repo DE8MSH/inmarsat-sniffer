@@ -225,10 +225,10 @@ Recordings are capped at 500 MB (~1-2 minutes depending on sample rate). RTL-SDR
 ### Mode selection
 
 ```bash
---mode=aero    # Aero channels only (default, 2.4 MHz SDR works)
---mode=stdc    # STD-C EGC only
---mode=full    # Both (needs wider SDR, ~9 MHz)
---mode=auto    # Auto-select based on SDR bandwidth
+--mode=aero    # Aero channels only (default) — the verified-working path
+--mode=stdc    # STD-C EGC only — experimental, STD-C decode not yet confirmed on-air
+--mode=full    # Both — experimental, needs wider SDR (~9 MHz)
+--mode=auto    # Auto-select based on SDR bandwidth (may enable STD-C silently)
 ```
 
 ### Low-power hosts (Raspberry Pi, SBCs)
