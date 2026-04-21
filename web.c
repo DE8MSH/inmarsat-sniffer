@@ -19,6 +19,8 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+
+#include "inmarsat.h"
 #include <time.h>
 #include <unistd.h>
 
@@ -198,7 +200,13 @@ static int build_json(char *buf, int maxlen) {
     pthread_mutex_lock(&state.lock);
 
     int pos = 0;
-    pos += snprintf(buf + pos, maxlen - pos, "{\"t\":%.3f,", now_unix());
+    /* Expose operating mode so the HTML/JS can hide STD-C UI when we're in
+     * aero-only mode (default). Avoids showing a dead tab with no data. */
+    extern op_mode_t op_mode;
+    int stdc_enabled = (op_mode != MODE_AERO);
+    pos += snprintf(buf + pos, maxlen - pos,
+        "{\"t\":%.3f,\"stdc_enabled\":%s,",
+        now_unix(), stdc_enabled ? "true" : "false");
 
     /* STD-C messages */
     pos += snprintf(buf + pos, maxlen - pos, "\"stdc\":[");
@@ -361,7 +369,7 @@ static const char HTML_PAGE[] =
 "  <span class=\"stat\">Locked <span id=\"n-ac\" class=\"val\">0</span></span>\n"
 "  <span class=\"stat\">ACARS <span id=\"n-acars\" class=\"val\">0</span></span>\n"
 "  <span class=\"stat\">Positions <span id=\"n-pos\" class=\"val\">0</span></span>\n"
-"  <span class=\"stat\">STD-C <span id=\"n-stdc\" class=\"val\">0</span></span>\n"
+"  <span class=\"stat stdc-ui\">STD-C <span id=\"n-stdc\" class=\"val\">0</span></span>\n"
 "  <button id=\"btn-export\" onclick=\"exportAircraft()\" style=\"background:#334155;color:#e2e8f0;border:1px solid #475569;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;margin-left:4px\">Export CSV</button>\n"
 "  <span id=\"status\" style=\"color:#64748b\">connecting...</span>\n"
 "</div>\n"
@@ -369,7 +377,7 @@ static const char HTML_PAGE[] =
 "<div id=\"side\">\n"
 "  <div id=\"tabs\">\n"
 "    <div class=\"tab active\" onclick=\"switchTab('acars')\">ACARS</div>\n"
-"    <div class=\"tab\" onclick=\"switchTab('stdc')\">STD-C</div>\n"
+"    <div class=\"tab stdc-ui\" onclick=\"switchTab('stdc')\">STD-C</div>\n"
 "    <div class=\"tab\" onclick=\"switchTab('channels')\">Channels</div>\n"
 "  </div>\n"
 "  <div id=\"tab-acars\" class=\"tab-content active\"><div id=\"aero-list\"></div></div>\n"
@@ -427,6 +435,9 @@ static const char HTML_PAGE[] =
 "document.getElementById('n-acars').textContent=d.total_acars||(d.aircraft?d.aircraft.length:0);"
 "document.getElementById('n-pos').textContent=nPos;"
 "document.getElementById('n-stdc').textContent=d.stdc?d.stdc.length:0;"
+"/* Hide STD-C tab and counter when not in a mode that decodes it */"
+"var stdcUI=document.querySelectorAll('.stdc-ui');"
+"for(var i=0;i<stdcUI.length;i++)stdcUI[i].style.display=d.stdc_enabled?'':'none';"
 "document.getElementById('status').style.color='#22c55e';"
 "document.getElementById('status').textContent='live';"
 "if(d.channels){"

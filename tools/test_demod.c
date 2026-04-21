@@ -7,6 +7,10 @@
 #include <stdint.h>
 #include "../jaero_dsp/jaero_demod.h"
 
+/* test_demod doesn't link main.c; supply the globals that jaero_demod.cpp
+ * expects via extern. */
+double oqpsk_lockingbw = 0;
+
 static int acars_count = 0;
 static int bits_count = 0;
 
