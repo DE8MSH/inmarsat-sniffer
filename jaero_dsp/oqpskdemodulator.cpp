@@ -283,10 +283,18 @@ void OqpskDemodulator::FreqOffsetEstimateSlot(double freq_offset_est)
         if (freqest_countdown > 0) freqest_countdown--;
         else {
             mixer_center.SetFreq(mixer2.GetFreqHz());
-            if (mixer_center.GetFreqHz() < lockingbw / 2.0)
-                mixer_center.SetFreq(lockingbw / 2.0);
-            if (mixer_center.GetFreqHz() > (Fs / 2.0 - lockingbw / 2.0))
-                mixer_center.SetFreq(Fs / 2.0 - lockingbw / 2.0);
+            /* Clamp mixer_center to ±lockingbw/2 around freq_center (the
+             * intended audio position of the carrier) AND to a safe range
+             * in [500, Fs/2-500] Hz where the Hilbert USB has clean
+             * response. JAERO's original clamp used absolute Hz and broke
+             * when lockingbw >= Fs/2 — the two bounds crossed and pulled
+             * mixer_center to the wrong side of a real carrier. */
+            double lo = freq_center - lockingbw / 2.0;
+            double hi = freq_center + lockingbw / 2.0;
+            if (lo < 500.0) lo = 500.0;
+            if (hi > Fs / 2.0 - 500.0) hi = Fs / 2.0 - 500.0;
+            if (mixer_center.GetFreqHz() < lo) mixer_center.SetFreq(lo);
+            if (mixer_center.GetFreqHz() > hi) mixer_center.SetFreq(hi);
             coarsefreqestimate->bigchange();
             for (size_t j = 0; j < bbcycbuff.size(); j++)
                 bbcycbuff[j] = cpx_type(0, 0);
