@@ -37,6 +37,7 @@ extern iq_format_t iq_format;
 extern FILE *in_file;
 extern op_mode_t op_mode;
 extern int skip_c_channel;
+extern double oqpsk_lockingbw;
 extern char *satellite_name;
 
 #ifdef HAVE_SOAPYSDR
@@ -140,6 +141,10 @@ static void usage(int exitcode) {
 "    --mode=MODE             operating mode: auto (default), aero, stdc, full\n"
 "    --skip-c-channel        skip OQPSK 8400 C-channel demods (voice/data bursts,\n"
 "                             rarely carry ACARS; saves ~50% CPU on low-power hosts)\n"
+"    --oqpsk-lockingbw=HZ    AFC search/pull-in bandwidth for OQPSK 10500 (default 10500).\n"
+"                             Try 20000-30000 if you see SDRReceiver+JAERO locking carriers\n"
+"                             that we don't (means drifted from nominal channel centres).\n"
+"                             Wider = more carriers caught but may lock onto spurs.\n"
 "\n"
 "Output:\n"
 "    --web[=PORT]            enable live web dashboard (default port: 8888)\n"
@@ -238,6 +243,7 @@ void parse_options(int argc, char **argv) {
         OPT_JAERO_FORMAT,
         OPT_AGC,
         OPT_SKIP_C_CHANNEL,
+        OPT_OQPSK_LOCKINGBW,
     };
 
     static const struct option longopts[] = {
@@ -285,6 +291,7 @@ void parse_options(int argc, char **argv) {
         { "jaero-format",       optional_argument, NULL, OPT_JAERO_FORMAT },
         { "agc",                no_argument,       NULL, OPT_AGC },
         { "skip-c-channel",     no_argument,       NULL, OPT_SKIP_C_CHANNEL },
+        { "oqpsk-lockingbw",    required_argument, NULL, OPT_OQPSK_LOCKINGBW },
         { "ppm",                required_argument, NULL, 'p' },
         { NULL, 0, NULL, 0 },
     };
@@ -537,6 +544,12 @@ void parse_options(int argc, char **argv) {
 
         case OPT_SKIP_C_CHANNEL:
             skip_c_channel = 1;
+            break;
+
+        case OPT_OQPSK_LOCKINGBW:
+            oqpsk_lockingbw = atof(optarg);
+            if (oqpsk_lockingbw < 1000 || oqpsk_lockingbw > 40000)
+                errx(1, "--oqpsk-lockingbw must be between 1000 and 40000 Hz");
             break;
 
         case OPT_UDP: {

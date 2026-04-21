@@ -315,6 +315,7 @@ int live = 0;
 iq_format_t iq_format = FMT_CI8;
 op_mode_t op_mode = MODE_AUTO;
 int skip_c_channel = 0;       /* --skip-c-channel: don't decode OQPSK 8400 C-channel */
+double oqpsk_lockingbw = 0;   /* --oqpsk-lockingbw=HZ: override default 10500 AFC range */
 char *satellite_name = NULL;
 
 /* SDR selection */
