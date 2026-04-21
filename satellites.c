@@ -62,101 +62,87 @@ static const channel_def_t channels_4f3[] = {
     { 1542992500.0, CHAN_AERO_8400, 26 },   /* AORW, ARINC/SITA, Laurentides CA */
 };
 
-/* I3-F5 (54W, AORE) -- Atlantic East
- * Frequencies from SDRReceiver 54W config. */
+/* I-3 F5 (54W, AORE) -- Atlantic East
+ * Frequencies from the authoritative INMARSAT L-band frequency list.
+ * Global-beam only — spot-beam 8400 regions (N-America, Mexico, Europe,
+ * Brazil, S-America, Africa) are listed in the reference but serve
+ * different coverage areas and can be added later if needed. */
 static const channel_def_t channels_3f5[] = {
+    /* STD-C EGC NCS (Burum NL) */
     { 1541450000.0, CHAN_STDC_EGC,   0 },
 
-    /* Aero 600 baud channels */
-    { 1545014429.0, CHAN_AERO_600,  1 },
-    { 1545029412.0, CHAN_AERO_600,  2 },
-    { 1545134635.0, CHAN_AERO_600,  3 },
-    { 1545194731.0, CHAN_AERO_600,  4 },
-
-    /* Aero 10500 baud channels */
-    { 1546045422.0, CHAN_AERO_10500, 5 },
-    { 1546061717.0, CHAN_AERO_10500, 6 },
-
-    /* Aero 8400 baud channels */
-    { 1546817935.0, CHAN_AERO_8400,  7 },
-    { 1546823426.0, CHAN_AERO_8400,  8 },
-    { 1546828110.0, CHAN_AERO_8400,  9 },
-    { 1546833112.0, CHAN_AERO_8400, 10 },
-    { 1546838105.0, CHAN_AERO_8400, 11 },
-    { 1546842770.0, CHAN_AERO_8400, 12 },
-    { 1546848155.0, CHAN_AERO_8400, 13 },
-    { 1546853237.0, CHAN_AERO_8400, 14 },
-};
-
-/* Alphasat / Inmarsat-4A F4 (25E, EMEA/IOR)
- * Aero frequencies from SDRReceiver 25E config.
- * STD-C EGC from thebaldgeek.github.io/stdc.html (1537.10 MHz). */
-static const channel_def_t channels_af1[] = {
-    { 1537100000.0, CHAN_STDC_EGC,   0 },
-
-    /* Aero 600 baud channels */
-    { 1545005146.0, CHAN_AERO_600,  1 },
-    { 1545214573.0, CHAN_AERO_600,  2 },
-    { 1545219706.0, CHAN_AERO_600,  3 },
-    { 1545224996.0, CHAN_AERO_600,  4 },
-    { 1545114134.0, CHAN_AERO_600,  5 },
-    { 1545119063.0, CHAN_AERO_600,  6 },
-    { 1545129563.0, CHAN_AERO_600,  7 },
-    { 1545159288.0, CHAN_AERO_600,  8 },
-    { 1545164682.0, CHAN_AERO_600,  9 },
-    { 1545183905.0, CHAN_AERO_600, 10 },
-    { 1545189244.0, CHAN_AERO_600, 11 },
-
-    /* Aero 1200 baud channels */
-    { 1545124261.0, CHAN_AERO_1200, 12 },
-
-    /* Aero 10500 baud channels */
-    { 1546005300.0, CHAN_AERO_10500, 13 },
-    { 1546019800.0, CHAN_AERO_10500, 14 },
-    { 1546034700.0, CHAN_AERO_10500, 15 },
-    { 1546084600.0, CHAN_AERO_10500, 16 },
-    { 1546099900.0, CHAN_AERO_10500, 17 },
-    { 1546114200.0, CHAN_AERO_10500, 18 },
-
-    /* Aero 8400 baud channels */
-    { 1546137300.0, CHAN_AERO_8400, 19 },
-    { 1546142500.0, CHAN_AERO_8400, 20 },
-    { 1546147700.0, CHAN_AERO_8400, 21 },
-    { 1546152300.0, CHAN_AERO_8400, 22 },
-    { 1546157500.0, CHAN_AERO_8400, 23 },
-    { 1546162600.0, CHAN_AERO_8400, 24 },
-    { 1546168300.0, CHAN_AERO_8400, 25 },
-    { 1546173430.0, CHAN_AERO_8400, 26 },
-    { 1546178430.0, CHAN_AERO_8400, 27 },
-};
-
-/* I4-F1 (143.5E, POR) -- Pacific Ocean
- * Frequencies from RadioReference forums + sigidwiki Inmarsat Aero listings. */
-static const channel_def_t channels_f1[] = {
-    { 1541450000.0, CHAN_STDC_EGC,   0 },
-
-    /* Aero 600 baud channels */
+    /* Aero-L 600 P-channels (Burum NL) */
     { 1545025000.0, CHAN_AERO_600,  1 },
     { 1545030000.0, CHAN_AERO_600,  2 },
     { 1545035000.0, CHAN_AERO_600,  3 },
     { 1545040000.0, CHAN_AERO_600,  4 },
-    { 1545045000.0, CHAN_AERO_600,  5 },
-    { 1545055000.0, CHAN_AERO_600,  6 },
-    { 1545095000.0, CHAN_AERO_600,  7 },
-    { 1545135000.0, CHAN_AERO_600,  8 },
-    { 1545140000.0, CHAN_AERO_600,  9 },
-    { 1545145000.0, CHAN_AERO_600, 10 },
-    { 1545150000.0, CHAN_AERO_600, 11 },
-    { 1545155000.0, CHAN_AERO_600, 12 },
-    { 1545180000.0, CHAN_AERO_600, 13 },
-    { 1545210000.0, CHAN_AERO_600, 14 },
 
-    /* Aero 1200 baud channels */
-    { 1545070000.0, CHAN_AERO_1200, 15 },
+    /* Aero-H+ 10500 P-channels */
+    { 1546055000.0, CHAN_AERO_10500, 5 },
+    { 1546070000.0, CHAN_AERO_10500, 6 },
 
-    /* Aero 10500 baud channels */
-    { 1546005000.0, CHAN_AERO_10500, 16 },
-    { 1546035000.0, CHAN_AERO_10500, 17 },
+    /* Aero 8400 AMBE C-channels, global beam */
+    { 1542975000.0, CHAN_AERO_8400,  7 },
+    { 1542980000.0, CHAN_AERO_8400,  8 },
+    { 1542985000.0, CHAN_AERO_8400,  9 },
+};
+
+/* Alphasat / Inmarsat-4A F4 (25E, EMEA/IOR)
+ * Frequencies from the authoritative INMARSAT L-band frequency list PDF,
+ * independently verified live by lmb56 in Denmark (issue #13) using
+ * AirSpy R2. Provider is ARINC & SITA; ground station Fucino, IT. */
+static const channel_def_t channels_af1[] = {
+    /* STD-C EGC NCS */
+    { 1537100000.0, CHAN_STDC_EGC,   0 },
+
+    /* Aero-L 600 P-channels (Fucino IT) */
+    { 1545120000.0, CHAN_AERO_600,  1 },
+    { 1545130000.0, CHAN_AERO_600,  2 },
+
+    /* Aero-L 1200 P-channel */
+    { 1545125000.0, CHAN_AERO_1200, 3 },
+
+    /* Aero-H+ 10500 P-channels */
+    { 1546012500.0, CHAN_AERO_10500, 4 },
+    { 1546027500.0, CHAN_AERO_10500, 5 },
+
+    /* Aero 8400 AMBE C-channels, global beam */
+    { 1546142500.0, CHAN_AERO_8400,  6 },
+    { 1546147500.0, CHAN_AERO_8400,  7 },
+    { 1546152500.0, CHAN_AERO_8400,  8 },
+    { 1546182500.0, CHAN_AERO_8400,  9 },
+    { 1546187500.0, CHAN_AERO_8400, 10 },
+    { 1546192500.0, CHAN_AERO_8400, 11 },
+};
+
+/* I-6 F1 (83.5E, IOE) -- Indian Ocean East
+ * Frequencies from the authoritative INMARSAT L-band frequency list PDF.
+ * NOTE: our previous "F1" config claimed position 143.5°E (POR) but the
+ * PDF has no Inmarsat satellite at that position. I-6 F1 at 83.5°E is
+ * what's operational. Provider: ARINC & SITA; ground station Perth, AU.
+ * STD-C NCS is not documented on I-6 F1 in the reference.
+ * Untested on-air. */
+static const channel_def_t channels_f1[] = {
+    /* Aero-L 600 P-channels (Perth AU) */
+    { 1545160000.0, CHAN_AERO_600,  1 },
+    { 1545165000.0, CHAN_AERO_600,  2 },
+    { 1545185000.0, CHAN_AERO_600,  3 },
+    { 1545215000.0, CHAN_AERO_600,  4 },
+    { 1545220000.0, CHAN_AERO_600,  5 },
+    { 1545225000.0, CHAN_AERO_600,  6 },
+
+    /* Aero-H+ 10500 P-channels */
+    { 1546042500.0, CHAN_AERO_10500, 7 },
+    { 1546092500.0, CHAN_AERO_10500, 8 },
+    { 1546107500.0, CHAN_AERO_10500, 9 },
+    { 1546122500.0, CHAN_AERO_10500, 10 },
+
+    /* Aero 8400 AMBE C-channels, global beam */
+    { 1546157500.0, CHAN_AERO_8400, 11 },
+    { 1546162500.0, CHAN_AERO_8400, 12 },
+    { 1546167500.0, CHAN_AERO_8400, 13 },
+    { 1546172500.0, CHAN_AERO_8400, 14 },
+    { 1546177500.0, CHAN_AERO_8400, 15 },
 };
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
@@ -191,9 +177,8 @@ static const satellite_t satellites[] = {
         .channels = channels_3f5,
         .num_channels = ARRAY_SIZE(channels_3f5),
         .freq_min = 1541450000.0,
-        .freq_max = 1546853237.0,
-        /* RTL-SDR: SDRReceiver sdr_54W_all.ini — 1.92 MHz covers the wider
-         *          3F5 span (1.84 MHz) on RTL-SDR's native-clean rate ladder. */
+        .freq_max = 1546070000.0,
+        /* RTL-SDR: 1.92 MHz covers the wider 3F5 span on RTL-SDR's clean rates. */
         .preferred_rate_rtl     = 1920000.0,
         .preferred_rate_sdrplay = 3072000.0,
         .preferred_rate_hackrf  = 6000000.0,
@@ -207,23 +192,25 @@ static const satellite_t satellites[] = {
         .channels = channels_af1,
         .num_channels = ARRAY_SIZE(channels_af1),
         .freq_min = 1537100000.0,
-        .freq_max = 1546178430.0,
-        /* RTL-SDR: SDRReceiver sdr_25E.ini.
-         * SDRplay:  SDRReceiver sdr_25E_sdrplay.ini. */
+        .freq_max = 1546192500.0,
+        /* RTL-SDR/SDRplay rates from SDRReceiver 25E configs (unchanged —
+         * the aero cluster span is similar enough to 4F3). */
         .preferred_rate_rtl     = 1536000.0,
         .preferred_rate_sdrplay = 3072000.0,
         .preferred_rate_hackrf  = 6000000.0,
     },
     {
-        .name = "I4-F1",
+        .name = "I-6 F1",
         .designator = "F1",
-        .position = 143.5,
-        .region = "POR",
-        .stdc_egc_freq = 1541450000.0,
+        .position = 83.5,
+        .region = "IOE",
+        /* STD-C NCS is not documented on I-6 F1 in the reference PDF;
+         * may be absent on this satellite. 0 = no STD-C in aero-only mode. */
+        .stdc_egc_freq = 0.0,
         .channels = channels_f1,
         .num_channels = ARRAY_SIZE(channels_f1),
-        .freq_min = 1541450000.0,
-        .freq_max = 1546150000.0,
+        .freq_min = 1545160000.0,
+        .freq_max = 1546177500.0,
     },
 };
 

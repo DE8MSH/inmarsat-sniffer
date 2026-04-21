@@ -1252,18 +1252,43 @@ int main(int argc, char **argv) {
                 fabs(sat->position), sat->position < 0 ? "W" : "E");
         fprintf(stderr, "Channels: %d total\n", sat->num_channels);
 
+        /* Pre-pass to check if aero+C span fits on the selected SDR.
+         * Post PR #14, 4F3/3F5 have C-channels at ~1542.9 MHz — 3+ MHz below
+         * the aero cluster — so full aero-with-C span exceeds RTL-SDR's
+         * usable max of 2.88 MHz. Auto-enable --skip-c-channel in that case
+         * with a clear warning. */
+#ifdef HAVE_RTLSDR
+        if (rtl_dev_index >= 0 && !skip_c_channel && samp_rate == 0 &&
+            op_mode != MODE_STDC) {
+            double aero_lo = 1e12, aero_hi = 0;
+            for (int i = 0; i < sat->num_channels; i++) {
+                const channel_def_t *cd = &sat->channels[i];
+                if (cd->type == CHAN_STDC_EGC) continue;
+                if (cd->frequency < aero_lo) aero_lo = cd->frequency;
+                if (cd->frequency > aero_hi) aero_hi = cd->frequency;
+            }
+            /* RTL-SDR practical max ≈ 2.88 MHz; use 2.4 MHz for safety */
+            if ((aero_hi - aero_lo) * 1.2 > 2400000.0) {
+                fprintf(stderr,
+                    "RTL-SDR: %s aero+C span is %.2f MHz, exceeds RTL-SDR's\n"
+                    "         usable max. Auto-enabling --skip-c-channel to\n"
+                    "         skip OQPSK 8400 C-channels (voice/data, rarely\n"
+                    "         carry ACARS). Pass --skip-c-channel explicitly\n"
+                    "         to silence this message.\n",
+                    sat->name, (aero_hi - aero_lo) / 1e6);
+                skip_c_channel = 1;
+            }
+        }
+#endif
+
         /* Auto-compute center frequency and sample rate from the channels
-         * that will actually be decoded (filtered by --mode). Using the
-         * satellite's full freq_min/max would include bands we're not
-         * using, forcing a wider SDR bandwidth than needed. */
+         * that will actually be decoded (filtered by --mode + --skip-c-channel). */
         double lo = 1e12, hi = 0;
         for (int i = 0; i < sat->num_channels; i++) {
             const channel_def_t *cd = &sat->channels[i];
             if (op_mode == MODE_AERO && cd->type == CHAN_STDC_EGC) continue;
             if (op_mode == MODE_STDC && cd->type != CHAN_STDC_EGC) continue;
-            /* Keep C-channels in the lo/hi span so auto center/rate covers them
-             * even when --skip-c-channel skips the demods. Avoids breaking
-             * playback of captures made without the flag. */
+            if (skip_c_channel && cd->type == CHAN_AERO_8400) continue;
             if (cd->frequency < lo) lo = cd->frequency;
             if (cd->frequency > hi) hi = cd->frequency;
         }
