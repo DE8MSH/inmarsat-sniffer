@@ -289,7 +289,11 @@ void feed_aero_message(const aero_message_t *msg) {
     const char *arinc = msg->arinc622_json;
     int len = snprintf(buf, sizeof(buf),
         "{"
-            "\"app\":{\"name\":\"inmarsat-sniffer\",\"ver\":\"VFO%02d\"},"
+            /* app.name must literally be "JAERO" for Acarshub's dumpJSON
+             * parser to extract fields — anything else and Acarshub stores
+             * empty strings (per issue #10 testing). Same quirk iridium-sniffer
+             * had to work around. */
+            "\"app\":{\"name\":\"JAERO\",\"ver\":\"inmarsat-sniffer VFO%02d\"},"
             "\"isu\":{"
                 "\"acars\":{"
                     "\"mode\":\"%c\","
