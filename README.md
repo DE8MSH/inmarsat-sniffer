@@ -103,7 +103,14 @@ make -j$(nproc)
 ### macOS (Homebrew)
 
 ```bash
-brew install cmake librtlsdr hackrf libbladerf uhd soapysdr libacars mosquitto zmq
+brew install cmake librtlsdr hackrf libbladerf uhd soapysdr mosquitto zmq
+
+# libacars isn't in Homebrew — build from source:
+git clone https://github.com/szpajder/libacars.git /tmp/libacars
+cd /tmp/libacars && mkdir build && cd build
+cmake .. && make -j$(sysctl -n hw.ncpu) && sudo make install
+cd -
+
 git clone https://github.com/alphafox02/inmarsat-sniffer.git
 cd inmarsat-sniffer && mkdir build && cd build
 cmake .. && make -j$(sysctl -n hw.ncpu)
