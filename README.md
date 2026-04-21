@@ -80,8 +80,14 @@ sudo apt install libuhd-dev          # USRP (B2x0, N2x0, etc.)
 sudo apt install libsoapysdr-dev     # SoapySDR (any device)
 # SDRplay native API: install from https://www.sdrplay.com/api/
 
-# Optional: ACARS ARINC-622/ADS-C/CPDLC
-sudo apt install libacars-dev        # libacars-2 (or build from source)
+# Optional: ACARS ARINC-622/ADS-C/CPDLC — libacars-2 is NOT packaged on
+# most Debian/Ubuntu releases. Build from source:
+sudo apt install autoconf automake libtool pkg-config
+git clone https://github.com/szpajder/libacars.git /tmp/libacars
+cd /tmp/libacars && mkdir build && cd build
+cmake .. && make -j$(nproc) && sudo make install
+sudo ldconfig
+cd -  # back to inmarsat-sniffer
 
 # Optional: ZMQ audio output for external JAERO
 sudo apt install libzmq3-dev
