@@ -28,6 +28,13 @@ typedef struct {
     int num_channels;
     double freq_min;            /* lowest channel frequency */
     double freq_max;            /* highest channel frequency */
+
+    /* Known-good sample rates per SDR type, from authoritative sources
+     * (SDRReceiver ini configs, own live testing). 0 = unknown, fall back
+     * to the generic max(span*1.2, SDR_floor) auto-rate logic. */
+    double preferred_rate_rtl;      /* RTL-SDR clean rate (Hz) */
+    double preferred_rate_sdrplay;  /* SDRplay clean rate (Hz) */
+    double preferred_rate_hackrf;   /* HackRF clean rate (Hz) */
 } satellite_t;
 
 /* Look up satellite by designator string (e.g. "4F3", "3F5").

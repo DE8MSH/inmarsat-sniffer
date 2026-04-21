@@ -175,6 +175,13 @@ static const satellite_t satellites[] = {
         .num_channels = ARRAY_SIZE(channels_4f3),
         .freq_min = 1537700000.0,
         .freq_max = 1546186430.0,
+        /* RTL-SDR: SDRReceiver sdr_98W.ini; proven live here.
+         * SDRplay:  extrapolated from the AF1 SDRplay config (same Inmarsat
+         *           generation and L-band span); proven live here.
+         * HackRF:   proven live here. */
+        .preferred_rate_rtl     = 1536000.0,
+        .preferred_rate_sdrplay = 3072000.0,
+        .preferred_rate_hackrf  = 6000000.0,
     },
     {
         .name = "I3-F5",
@@ -186,6 +193,11 @@ static const satellite_t satellites[] = {
         .num_channels = ARRAY_SIZE(channels_3f5),
         .freq_min = 1541450000.0,
         .freq_max = 1546853237.0,
+        /* RTL-SDR: SDRReceiver sdr_54W_all.ini — 1.92 MHz covers the wider
+         *          3F5 span (1.84 MHz) on RTL-SDR's native-clean rate ladder. */
+        .preferred_rate_rtl     = 1920000.0,
+        .preferred_rate_sdrplay = 3072000.0,
+        .preferred_rate_hackrf  = 6000000.0,
     },
     {
         .name = "Alphasat (I-4A F4)",
@@ -197,6 +209,11 @@ static const satellite_t satellites[] = {
         .num_channels = ARRAY_SIZE(channels_af1),
         .freq_min = 1537100000.0,
         .freq_max = 1546178430.0,
+        /* RTL-SDR: SDRReceiver sdr_25E.ini.
+         * SDRplay:  SDRReceiver sdr_25E_sdrplay.ini. */
+        .preferred_rate_rtl     = 1536000.0,
+        .preferred_rate_sdrplay = 3072000.0,
+        .preferred_rate_hackrf  = 6000000.0,
     },
     {
         .name = "I4-F1",
