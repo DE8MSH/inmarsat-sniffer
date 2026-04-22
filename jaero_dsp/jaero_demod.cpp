@@ -419,6 +419,34 @@ int jaero_pmsk_is_locked(jaero_pmsk_demod_t *d) {
     return (d && d->sigstat_good) ? 1 : 0;
 }
 
+int jaero_pmsk_get_baseband(jaero_pmsk_demod_t *d, float *out, int max_samples)
+{
+    if (!d || !d->demod || !out || max_samples <= 0) return 0;
+    /* Demod's snapshot writes cpx_type (std::complex<float>). Caller-visible
+     * output is interleaved re,im floats, so max_samples here refers to
+     * complex samples (each = 2 floats). */
+    std::vector<cpx_type> tmp(max_samples);
+    int n = d->demod->get_baseband_snapshot(tmp.data(), max_samples);
+    for (int i = 0; i < n; i++) {
+        out[i*2]   = tmp[i].real();
+        out[i*2+1] = tmp[i].imag();
+    }
+    return n;
+}
+
+void jaero_pmsk_get_tune_info(jaero_pmsk_demod_t *d, double *mc, double *fc, double *fs)
+{
+    if (!d || !d->demod) { if (mc) *mc = 0; if (fc) *fc = 0; if (fs) *fs = 0; return; }
+    if (mc) *mc = d->demod->getMixerCenterHz();
+    if (fc) *fc = d->demod->getFreqCenterHz();
+    if (fs) *fs = d->demod->getFs();
+}
+
+void jaero_pmsk_set_manual_tune(jaero_pmsk_demod_t *d, double audio_hz)
+{
+    if (d && d->demod) d->demod->setManualTune(audio_hz);
+}
+
 /* ============================================================
  * Continuous OQPSK demodulator (Aero H/H+/L, 10500 baud forward link)
  * Uses OqpskDemodulator (not BurstOqpskDemodulator).
@@ -587,6 +615,31 @@ double jaero_oqpsk_cont_get_ebno(jaero_oqpsk_cont_demod_t *d) {
 
 int jaero_oqpsk_cont_is_locked(jaero_oqpsk_cont_demod_t *d) {
     return (d && d->sigstat_good) ? 1 : 0;
+}
+
+int jaero_oqpsk_cont_get_baseband(jaero_oqpsk_cont_demod_t *d, float *out, int max_samples)
+{
+    if (!d || !d->demod || !out || max_samples <= 0) return 0;
+    std::vector<cpx_type> tmp(max_samples);
+    int n = d->demod->get_baseband_snapshot(tmp.data(), max_samples);
+    for (int i = 0; i < n; i++) {
+        out[i*2]   = tmp[i].real();
+        out[i*2+1] = tmp[i].imag();
+    }
+    return n;
+}
+
+void jaero_oqpsk_cont_get_tune_info(jaero_oqpsk_cont_demod_t *d, double *mc, double *fc, double *fs)
+{
+    if (!d || !d->demod) { if (mc) *mc = 0; if (fc) *fc = 0; if (fs) *fs = 0; return; }
+    if (mc) *mc = d->demod->getMixerCenterHz();
+    if (fc) *fc = d->demod->getFreqCenterHz();
+    if (fs) *fs = d->demod->getFs();
+}
+
+void jaero_oqpsk_cont_set_manual_tune(jaero_oqpsk_cont_demod_t *d, double audio_hz)
+{
+    if (d && d->demod) d->demod->setManualTune(audio_hz);
 }
 
 } /* extern "C" */

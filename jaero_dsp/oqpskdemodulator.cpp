@@ -159,6 +159,34 @@ void OqpskDemodulator::setScatterPointType(ScatterPointType type) { scatterpoint
 double OqpskDemodulator::getCurrentFreq()       { return mixer_center.GetFreqHz(); }
 void OqpskDemodulator::invalidatesettings()     { Fs = -1; fb = -1; }
 
+int OqpskDemodulator::get_baseband_snapshot(cpx_type *out, int max_samples)
+{
+    if (!out || max_samples <= 0) return 0;
+    int n = (int)bbcycbuff.size();
+    if (n > max_samples) n = max_samples;
+    /* Unrolled copy of the ring in time order starting at bbcycbuff_ptr
+     * (oldest sample). Audio thread may be writing concurrently — samples
+     * at the boundary may be inconsistent but magnitude spectrum is robust. */
+    int start = bbcycbuff_ptr % (int)bbcycbuff.size();
+    for (int i = 0; i < n; i++) {
+        int idx = (start + i) % (int)bbcycbuff.size();
+        out[i] = bbcycbuff[idx];
+    }
+    return n;
+}
+
+void OqpskDemodulator::setManualTune(double audio_hz)
+{
+    /* Clamp to the same safe audio-band limits the AFC clamp uses. */
+    if (audio_hz < 500.0) audio_hz = 500.0;
+    if (audio_hz > Fs / 2.0 - 500.0) audio_hz = Fs / 2.0 - 500.0;
+    mixer_center.SetFreq(audio_hz, Fs);
+    mixer2.SetFreq(audio_hz, Fs);
+    coarsefreqestimate->bigchange();
+    for (size_t j = 0; j < bbcycbuff.size(); j++)
+        bbcycbuff[j] = cpx_type(0, 0);
+}
+
 void OqpskDemodulator::setSoftBitsCallback(oqpsk_soft_bits_cb cb, void *user)
 {
     soft_bits_cb   = cb;

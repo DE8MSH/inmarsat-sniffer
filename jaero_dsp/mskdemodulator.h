@@ -70,6 +70,14 @@ public:
     double getMSE() const { return mse; }
     double getEbNo() const { return ebnomeasure ? ebnomeasure->EbNo : 0; }
 
+    /* Baseband spectrum access for the web UI. Unlocked ring copy; magnitude
+     * spectrum is robust to ring-wrap artefacts. */
+    int get_baseband_snapshot(cpx_type *out, int max_samples);
+    double getMixerCenterHz() { return mixer_center.GetFreqHz(); }
+    double getFs() const { return Fs; }
+    double getFreqCenterHz() const { return freq_center; }
+    void setManualTune(double audio_hz);
+
 private:
     msk_soft_bits_cb soft_bits_cb;
     void *soft_bits_user;

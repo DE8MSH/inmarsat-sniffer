@@ -206,6 +206,30 @@ void MskDemodulator::setCPUReduce(bool s) { cpuReduce = s; }
 void MskDemodulator::setScatterPointType(ScatterPointType t) { scatterpointtype = (int)t; }
 double MskDemodulator::getCurrentFreq() { return mixer_center.GetFreqHz(); }
 
+int MskDemodulator::get_baseband_snapshot(cpx_type *out, int max_samples)
+{
+    if (!out || max_samples <= 0) return 0;
+    int n = (int)bbcycbuff.size();
+    if (n > max_samples) n = max_samples;
+    int start = bbcycbuff_ptr % (int)bbcycbuff.size();
+    for (int i = 0; i < n; i++) {
+        int idx = (start + i) % (int)bbcycbuff.size();
+        out[i] = bbcycbuff[idx];
+    }
+    return n;
+}
+
+void MskDemodulator::setManualTune(double audio_hz)
+{
+    if (audio_hz < 500.0) audio_hz = 500.0;
+    if (audio_hz > Fs / 2.0 - 500.0) audio_hz = Fs / 2.0 - 500.0;
+    mixer_center.SetFreq(audio_hz, Fs);
+    mixer2.SetFreq(audio_hz, Fs);
+    if (coarsefreqestimate) coarsefreqestimate->bigchange();
+    for (size_t j = 0; j < bbcycbuff.size(); j++)
+        bbcycbuff[j] = cpx_type(0, 0);
+}
+
 void MskDemodulator::setSoftBitsCallback(msk_soft_bits_cb cb, void *user)
 {
     soft_bits_cb = cb;
