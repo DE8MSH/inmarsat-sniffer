@@ -67,6 +67,12 @@ static struct {
 
     aircraft_entry_t aircraft[MAX_AIRCRAFT];
     int num_aircraft;
+
+    /* Running total of ACARS messages ever received since startup. Shown
+     * as the 'ACARS' counter in the dashboard header. Previously the JS
+     * fell back to aircraft-count when this field was missing, which only
+     * reflected unique tail numbers — confusing when traffic was heavy. */
+    unsigned long total_acars;
 } state;
 
 /* ---- Time ---- */
@@ -107,6 +113,7 @@ void web_add_stdc(const stdc_message_t *msg) {
 void web_add_aero(const aero_message_t *msg) {
     pthread_mutex_lock(&state.lock);
 
+    state.total_acars++;
     double now = now_unix();
 
     /* Find existing aircraft by registration */
@@ -205,8 +212,8 @@ static int build_json(char *buf, int maxlen) {
     extern op_mode_t op_mode;
     int stdc_enabled = (op_mode != MODE_AERO);
     pos += snprintf(buf + pos, maxlen - pos,
-        "{\"t\":%.3f,\"stdc_enabled\":%s,",
-        now_unix(), stdc_enabled ? "true" : "false");
+        "{\"t\":%.3f,\"stdc_enabled\":%s,\"total_acars\":%lu,",
+        now_unix(), stdc_enabled ? "true" : "false", state.total_acars);
 
     /* STD-C messages */
     pos += snprintf(buf + pos, maxlen - pos, "\"stdc\":[");
