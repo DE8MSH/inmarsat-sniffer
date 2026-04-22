@@ -531,6 +531,12 @@ int jaero_pmsk_get_spectrum(jaero_pmsk_demod_t *d, float *mags_db, int n_bins)
     return compute_spectrum(audio.data(), n, mags_db, n_bins);
 }
 
+int jaero_pmsk_get_constellation(jaero_pmsk_demod_t *d, double *iq_out, int max_pairs)
+{
+    if (!d || !d->demod) return 0;
+    return d->demod->get_constellation_snapshot(iq_out, max_pairs);
+}
+
 /* ============================================================
  * Continuous OQPSK demodulator (Aero H/H+/L, 10500 baud forward link)
  * Uses OqpskDemodulator (not BurstOqpskDemodulator).
@@ -747,6 +753,12 @@ int jaero_oqpsk_cont_get_spectrum(jaero_oqpsk_cont_demod_t *d, float *mags_db, i
     std::vector<double> audio(4096);
     int n = d->demod->get_audio_snapshot(audio.data(), 4096);
     return compute_spectrum(audio.data(), n, mags_db, n_bins);
+}
+
+int jaero_oqpsk_cont_get_constellation(jaero_oqpsk_cont_demod_t *d, double *iq_out, int max_pairs)
+{
+    if (!d || !d->demod) return 0;
+    return d->demod->get_constellation_snapshot(iq_out, max_pairs);
 }
 
 } /* extern "C" */

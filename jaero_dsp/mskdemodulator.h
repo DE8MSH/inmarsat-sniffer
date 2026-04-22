@@ -73,6 +73,11 @@ public:
     /* Audio spectrum access for the web UI (real-sample FFT shows signals
      * at their actual audio frequency). */
     int get_audio_snapshot(double *out, int max_samples);
+    /* Constellation points (post-matched-filter complex samples). Each
+     * pair is one I/Q point. max_pairs is the capacity of `out` measured
+     * in I/Q pairs (so `out` must be at least 2*max_pairs doubles).
+     * Returns the number of pairs actually written. */
+    int get_constellation_snapshot(double *out, int max_pairs);
     double getMixerCenterHz() { return mixer_center.GetFreqHz(); }
     double getFs() const { return Fs; }
     double getFreqCenterHz() const { return freq_center; }

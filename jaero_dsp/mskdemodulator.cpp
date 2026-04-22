@@ -219,6 +219,23 @@ int MskDemodulator::get_audio_snapshot(double *out, int max_samples)
     return n;
 }
 
+int MskDemodulator::get_constellation_snapshot(double *out, int max_pairs)
+{
+    if (!out || max_pairs <= 0) return 0;
+    int cap = (int)pointbuff.size();
+    if (cap <= 0) return 0;
+    int n = cap;
+    if (n > max_pairs) n = max_pairs;
+    /* pointbuff is written by the DSP thread; we do an unlocked read
+     * since a half-updated point renders as a misplaced dot at worst. */
+    for (int i = 0; i < n; i++) {
+        cpx_type p = pointbuff[i];
+        out[i * 2]     = p.real();
+        out[i * 2 + 1] = p.imag();
+    }
+    return n;
+}
+
 void MskDemodulator::setManualTune(double audio_hz)
 {
     if (audio_hz < 500.0) audio_hz = 500.0;

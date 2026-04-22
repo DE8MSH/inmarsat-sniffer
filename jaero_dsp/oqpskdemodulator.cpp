@@ -172,6 +172,21 @@ int OqpskDemodulator::get_audio_snapshot(double *out, int max_samples)
     return n;
 }
 
+int OqpskDemodulator::get_constellation_snapshot(double *out, int max_pairs)
+{
+    if (!out || max_pairs <= 0) return 0;
+    int cap = (int)pointbuff.size();
+    if (cap <= 0) return 0;
+    int n = cap;
+    if (n > max_pairs) n = max_pairs;
+    for (int i = 0; i < n; i++) {
+        cpx_type p = pointbuff[i];
+        out[i * 2]     = p.real();
+        out[i * 2 + 1] = p.imag();
+    }
+    return n;
+}
+
 void OqpskDemodulator::setManualTune(double audio_hz)
 {
     /* Clamp to the same safe audio-band limits the AFC clamp uses. */

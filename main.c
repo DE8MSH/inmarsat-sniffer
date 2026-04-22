@@ -157,6 +157,19 @@ int web_get_spectrum_by_channel(int channel_id, float *mags_db, int n_bins,
     return -1;
 }
 
+int web_get_constellation_by_channel(int channel_id, double *iq_out, int max_pairs)
+{
+    for (int i = 0; i < num_jaero_chans; i++) {
+        if (jaero_chans[i].channel_id != channel_id) continue;
+        if (jaero_chans[i].pmsk)
+            return jaero_pmsk_get_constellation(jaero_chans[i].pmsk, iq_out, max_pairs);
+        if (jaero_chans[i].oqpsk_cont)
+            return jaero_oqpsk_cont_get_constellation(jaero_chans[i].oqpsk_cont, iq_out, max_pairs);
+        return 0;
+    }
+    return 0;
+}
+
 /* audio_hz < 0 means 'no tune change'; afc_action: 0=leave, 1=enable, -1=disable */
 int web_set_tune_by_channel(int channel_id, double audio_hz, int afc_action)
 {

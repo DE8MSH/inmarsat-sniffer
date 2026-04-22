@@ -400,8 +400,10 @@ static const char HTML_PAGE[] =
 "      <span id=\"spec-info\" style=\"color:#94a3b8\"></span>\n"
 "      <button id=\"spec-auto\" onclick=\"resetTune()\" style=\"background:#334155;color:#e2e8f0;border:1px solid #475569;border-radius:3px;padding:2px 8px;cursor:pointer;font-size:11px;margin-left:auto\">Auto (AFC)</button>\n"
 "    </div>\n"
-"    <div style=\"font-size:10px;color:#64748b;margin-bottom:4px\">Waterfall (newest at top) \\u2014 time scrolls down. Click to retune (disables AFC). Triangle at top marks the current demod tune.</div>\n"
-"    <canvas id=\"spec-canvas\" width=\"512\" height=\"160\" style=\"width:100%;background:#0b1220;border:1px solid #334155;border-radius:4px;cursor:crosshair;display:block\"></canvas>\n"
+"    <div style=\"font-size:10px;color:#64748b;margin-bottom:4px\">Waterfall \\u2014 newest at top, time scrolls down. Click to retune (disables AFC). Triangle marks the current demod tune.</div>\n"
+"    <canvas id=\"spec-canvas\" width=\"512\" height=\"180\" style=\"width:100%;height:180px;background:#0b1220;border:1px solid #334155;border-radius:4px;cursor:crosshair;display:block\"></canvas>\n"
+"    <div style=\"font-size:10px;color:#64748b;margin:10px 0 4px 0\">Constellation \\u2014 post-matched-filter I/Q points. Tight clusters = locked, smear = not.</div>\n"
+"    <canvas id=\"const-canvas\" width=\"260\" height=\"260\" style=\"width:100%;max-width:260px;aspect-ratio:1/1;background:#0b1220;border:1px solid #334155;border-radius:4px;display:block;margin:0 auto\"></canvas>\n"
 "  </div>\n"
 "</div>\n"
 "<script>"
@@ -440,10 +442,50 @@ static const char HTML_PAGE[] =
 "    .then(function(r){return r.json()})"
 "    .then(function(d){drawWaterfall(d)})"
 "    .catch(function(){});"
+"  fetch('/api/constellation?ch='+ch)"
+"    .then(function(r){return r.json()})"
+"    .then(function(d){drawConstellation(d)})"
+"    .catch(function(){});"
 "}"
-/* dB -> RGB. Magma-ish: -80 dB (black) → purple → red → orange → yellow (0 dB). */
+"function drawConstellation(d){"
+"  var cv=document.getElementById('const-canvas');if(!cv)return;"
+"  var ctx=cv.getContext('2d');"
+"  var W=cv.width,H=cv.height;"
+"  ctx.fillStyle='#0b1220';ctx.fillRect(0,0,W,H);"
+/* Axes through the middle */
+"  ctx.strokeStyle='#1e293b';ctx.lineWidth=1;ctx.beginPath();"
+"  ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);"
+"  ctx.moveTo(W/2,0);ctx.lineTo(W/2,H);ctx.stroke();"
+"  if(!d||!d.ok||!d.points||!d.points.length){"
+"    ctx.fillStyle='#64748b';ctx.font='10px system-ui';ctx.textAlign='center';"
+"    ctx.fillText('no constellation',W/2,H/2-6);"
+"    return;"
+"  }"
+/* Auto-scale to the largest magnitude seen in this batch, padded. */
+"  var mx=0.01;"
+"  for(var i=0;i<d.points.length;i++){"
+"    var ax=Math.abs(d.points[i][0]),ay=Math.abs(d.points[i][1]);"
+"    if(ax>mx)mx=ax;if(ay>mx)mx=ay;"
+"  }"
+"  var scale=(W/2-10)/mx;"
+/* Unit circle reference at the auto-scale radius (so locked signals sit on the circle). */
+"  ctx.strokeStyle='#334155';ctx.lineWidth=1;ctx.beginPath();"
+"  ctx.arc(W/2,H/2,(W/2-10)*0.7,0,Math.PI*2);ctx.stroke();"
+/* Points */
+"  ctx.fillStyle='rgba(56,189,248,0.7)';"
+"  for(var k=0;k<d.points.length;k++){"
+"    var px=W/2+d.points[k][0]*scale;"
+"    var py=H/2-d.points[k][1]*scale;"
+"    ctx.fillRect(px-1,py-1,2,2);"
+"  }"
+"}"
+/* dB -> RGB. Magma-ish with compressed dynamic range: -35 dB maps to
+ * black so the noise floor is dark and signal peaks stand out, 0 dB
+ * maps to yellow. Within the 35 dB visible range: black → purple →
+ * red → orange → yellow. Increases contrast between signal and noise
+ * floor compared to a full -80..0 dB ramp. */
 "function dbColor(db){"
-"  var t=(db+80)/80;if(t<0)t=0;if(t>1)t=1;"
+"  var t=(db+35)/35;if(t<0)t=0;if(t>1)t=1;"
 "  var r,g,b;"
 "  if(t<0.25){r=t*4*40;g=0;b=t*4*80}"              /* black -> purple */
 "  else if(t<0.5){var u=(t-0.25)*4;r=40+u*(180-40);g=0;b=80-u*40}"  /* purple -> red */
@@ -846,6 +888,39 @@ static void *client_thread(void *arg) {
         }
         send_response(fd, "200 OK", "application/json", body, pos);
         free(mags);
+        free(body);
+        close(fd);
+    } else if (strncmp(path, "/api/constellation", 18) == 0) {
+        /* /api/constellation?ch=N — returns up to 300 I/Q points from
+         * the demod's post-matched-filter ring buffer. Used by the
+         * Spectrum tab scatter plot. */
+        extern int web_get_constellation_by_channel(int, double *, int);
+        int ch = -1;
+        const char *q = strchr(path, '?');
+        if (q) {
+            const char *p = q + 1;
+            while (*p) {
+                if (!strncmp(p, "ch=", 3)) ch = atoi(p + 3);
+                const char *amp = strchr(p, '&');
+                if (!amp) break;
+                p = amp + 1;
+            }
+        }
+        const int MAX_PAIRS = 300;
+        double *iq = (double *)malloc(MAX_PAIRS * 2 * sizeof(double));
+        int n = (ch >= 0 && iq) ? web_get_constellation_by_channel(ch, iq, MAX_PAIRS) : 0;
+        char *body = (char *)malloc(MAX_PAIRS * 24 + 128);
+        if (!body) { free(iq); close(fd); return NULL; }
+        int pos = snprintf(body, 128,
+            "{\"ok\":%s,\"ch\":%d,\"points\":[",
+            n > 0 ? "true" : "false", ch);
+        for (int i = 0; i < n; i++) {
+            pos += snprintf(body + pos, MAX_PAIRS * 24 + 128 - pos,
+                            "%s[%.4f,%.4f]", i ? "," : "", iq[i * 2], iq[i * 2 + 1]);
+        }
+        pos += snprintf(body + pos, MAX_PAIRS * 24 + 128 - pos, "]}");
+        send_response(fd, "200 OK", "application/json", body, pos);
+        free(iq);
         free(body);
         close(fd);
     } else if (strncmp(path, "/api/tune", 9) == 0) {

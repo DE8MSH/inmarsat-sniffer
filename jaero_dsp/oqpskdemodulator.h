@@ -78,6 +78,11 @@ public:
      * see the peak offset from freq_center and click to retune.
      * Unlocked memcpy of the ring; fine for magnitude spectrum. */
     int get_audio_snapshot(double *out, int max_samples);
+    /* Constellation snapshot: post-matched-filter complex points. Each
+     * pair is one I/Q point, so `out` needs 2*max_pairs doubles.
+     * Returns number of pairs actually written. Unlocked copy of the
+     * internal pointbuff — a torn read shows as a stray dot at worst. */
+    int get_constellation_snapshot(double *out, int max_pairs);
     double getMixerCenterHz() { return mixer_center.GetFreqHz(); }
     double getFs() const { return Fs; }
     double getFreqCenterHz() const { return freq_center; }

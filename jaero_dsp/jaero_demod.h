@@ -72,6 +72,10 @@ double jaero_pmsk_get_lockingbw(jaero_pmsk_demod_t *d);
  * Values are normalised so peak = 0 dB, floor clamped around -80 dB.
  * Returns 1 on success, 0 if no data yet. n_bins should be <= 1024. */
 int    jaero_pmsk_get_spectrum(jaero_pmsk_demod_t *d, float *mags_db, int n_bins);
+/* Constellation points for the web UI scatter plot. `iq_out` is written
+ * as interleaved (I, Q) doubles — needs capacity >= 2*max_pairs.
+ * Returns number of I/Q pairs actually written. */
+int    jaero_pmsk_get_constellation(jaero_pmsk_demod_t *d, double *iq_out, int max_pairs);
 
 /* Lightweight AeroL-only decoder (no MSK demod, just frame decode).
  * Feed soft bits from an external demod via jaero_msk_feed_soft_bits(). */
@@ -100,6 +104,7 @@ void   jaero_oqpsk_cont_set_afc(jaero_oqpsk_cont_demod_t *d, int on);
 int    jaero_oqpsk_cont_is_afc(jaero_oqpsk_cont_demod_t *d);
 double jaero_oqpsk_cont_get_lockingbw(jaero_oqpsk_cont_demod_t *d);
 int    jaero_oqpsk_cont_get_spectrum(jaero_oqpsk_cont_demod_t *d, float *mags_db, int n_bins);
+int    jaero_oqpsk_cont_get_constellation(jaero_oqpsk_cont_demod_t *d, double *iq_out, int max_pairs);
 
 #ifdef __cplusplus
 }
