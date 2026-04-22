@@ -126,7 +126,8 @@ void web_get_channel_info(chan_web_info_t *out, int *n) {
  * Returns 0 on success, -1 if channel not found or no active demod. */
 int web_get_spectrum_by_channel(int channel_id, float *mags_db, int n_bins,
                                  double *mixer_hz, double *freq_center_hz,
-                                 double *fs_hz, int *baud_out)
+                                 double *fs_hz, double *lockingbw_hz,
+                                 int *baud_out, int *afc_on_out)
 {
     for (int i = 0; i < num_jaero_chans; i++) {
         if (jaero_chans[i].channel_id != channel_id) continue;
@@ -134,12 +135,20 @@ int web_get_spectrum_by_channel(int channel_id, float *mags_db, int n_bins,
         if (jaero_chans[i].pmsk) {
             jaero_pmsk_get_tune_info(jaero_chans[i].pmsk,
                                       mixer_hz, freq_center_hz, fs_hz);
+            if (lockingbw_hz) *lockingbw_hz =
+                jaero_pmsk_get_lockingbw(jaero_chans[i].pmsk);
+            if (afc_on_out)   *afc_on_out =
+                jaero_pmsk_is_afc(jaero_chans[i].pmsk);
             return jaero_pmsk_get_spectrum(jaero_chans[i].pmsk,
                                             mags_db, n_bins) ? 0 : -1;
         }
         if (jaero_chans[i].oqpsk_cont) {
             jaero_oqpsk_cont_get_tune_info(jaero_chans[i].oqpsk_cont,
                                             mixer_hz, freq_center_hz, fs_hz);
+            if (lockingbw_hz) *lockingbw_hz =
+                jaero_oqpsk_cont_get_lockingbw(jaero_chans[i].oqpsk_cont);
+            if (afc_on_out)   *afc_on_out =
+                jaero_oqpsk_cont_is_afc(jaero_chans[i].oqpsk_cont);
             return jaero_oqpsk_cont_get_spectrum(jaero_chans[i].oqpsk_cont,
                                                   mags_db, n_bins) ? 0 : -1;
         }
@@ -148,16 +157,23 @@ int web_get_spectrum_by_channel(int channel_id, float *mags_db, int n_bins,
     return -1;
 }
 
-int web_set_tune_by_channel(int channel_id, double audio_hz)
+/* audio_hz < 0 means 'no tune change'; afc_action: 0=leave, 1=enable, -1=disable */
+int web_set_tune_by_channel(int channel_id, double audio_hz, int afc_action)
 {
     for (int i = 0; i < num_jaero_chans; i++) {
         if (jaero_chans[i].channel_id != channel_id) continue;
         if (jaero_chans[i].pmsk) {
-            jaero_pmsk_set_manual_tune(jaero_chans[i].pmsk, audio_hz);
+            if (audio_hz >= 0)
+                jaero_pmsk_set_manual_tune(jaero_chans[i].pmsk, audio_hz);
+            if (afc_action > 0) jaero_pmsk_set_afc(jaero_chans[i].pmsk, 1);
+            if (afc_action < 0) jaero_pmsk_set_afc(jaero_chans[i].pmsk, 0);
             return 0;
         }
         if (jaero_chans[i].oqpsk_cont) {
-            jaero_oqpsk_cont_set_manual_tune(jaero_chans[i].oqpsk_cont, audio_hz);
+            if (audio_hz >= 0)
+                jaero_oqpsk_cont_set_manual_tune(jaero_chans[i].oqpsk_cont, audio_hz);
+            if (afc_action > 0) jaero_oqpsk_cont_set_afc(jaero_chans[i].oqpsk_cont, 1);
+            if (afc_action < 0) jaero_oqpsk_cont_set_afc(jaero_chans[i].oqpsk_cont, 0);
             return 0;
         }
         return -1;

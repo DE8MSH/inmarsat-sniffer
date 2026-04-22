@@ -341,6 +341,8 @@ struct jaero_pmsk_demod {
     jaero_cassign_cb cassign_cb;
     void *cassign_user;
     bool sigstat_good;
+    bool afc_on;          /* shadow of MskDemodulator::afc for UI readout */
+    double lockingbw;     /* shadow of Settings.lockingbw so UI can pick a zoom window */
 };
 
 static void pmsk_bits_adapter(const short *bits, int num_bits, void *ctx)
@@ -415,6 +417,8 @@ jaero_pmsk_demod_t *jaero_pmsk_create(double sample_rate, double symbol_rate,
     d->demod->setSoftBitsCallback(pmsk_bits_adapter, d);
     d->demod->setSignalStatusCallback(pmsk_sigstat_adapter, d);
     d->demod->setAFC(true);  /* on by default in JAERO GUI */
+    d->afc_on = true;
+    d->lockingbw = s.lockingbw;
 
     return d;
 }
@@ -502,6 +506,23 @@ void jaero_pmsk_set_manual_tune(jaero_pmsk_demod_t *d, double audio_hz)
     if (d && d->demod) d->demod->setManualTune(audio_hz);
 }
 
+void jaero_pmsk_set_afc(jaero_pmsk_demod_t *d, int on)
+{
+    if (!d || !d->demod) return;
+    d->demod->setAFC(on ? true : false);
+    d->afc_on = on ? true : false;
+}
+
+int jaero_pmsk_is_afc(jaero_pmsk_demod_t *d)
+{
+    return (d && d->afc_on) ? 1 : 0;
+}
+
+double jaero_pmsk_get_lockingbw(jaero_pmsk_demod_t *d)
+{
+    return d ? d->lockingbw : 0;
+}
+
 int jaero_pmsk_get_spectrum(jaero_pmsk_demod_t *d, float *mags_db, int n_bins)
 {
     if (!d || !d->demod || !mags_db || n_bins < 2) return 0;
@@ -527,6 +548,8 @@ struct jaero_oqpsk_cont_demod {
     jaero_cassign_cb cassign_cb;
     void *cassign_user;
     bool sigstat_good;
+    bool afc_on;          /* shadow of OqpskDemodulator::afc for UI readout */
+    double lockingbw;     /* shadow of Settings.lockingbw so UI can pick a zoom window */
 };
 
 static void oqpsk_cont_aerol_acars_adapter(ACARSItem &acarsitem, void *ctx)
@@ -612,6 +635,8 @@ jaero_oqpsk_cont_demod_t *jaero_oqpsk_cont_create(double sample_rate, double sym
     d->demod->setSoftBitsCallback(oqpsk_cont_bits_adapter, d);
     d->demod->setSignalStatusCallback(oqpsk_cont_sigstat_adapter, d);
     d->demod->setAFC(true);  /* on by default in JAERO GUI */
+    d->afc_on = true;
+    d->lockingbw = s.lockingbw;
 
     return d;
 }
@@ -697,6 +722,23 @@ void jaero_oqpsk_cont_get_tune_info(jaero_oqpsk_cont_demod_t *d, double *mc, dou
 void jaero_oqpsk_cont_set_manual_tune(jaero_oqpsk_cont_demod_t *d, double audio_hz)
 {
     if (d && d->demod) d->demod->setManualTune(audio_hz);
+}
+
+void jaero_oqpsk_cont_set_afc(jaero_oqpsk_cont_demod_t *d, int on)
+{
+    if (!d || !d->demod) return;
+    d->demod->setAFC(on ? true : false);
+    d->afc_on = on ? true : false;
+}
+
+int jaero_oqpsk_cont_is_afc(jaero_oqpsk_cont_demod_t *d)
+{
+    return (d && d->afc_on) ? 1 : 0;
+}
+
+double jaero_oqpsk_cont_get_lockingbw(jaero_oqpsk_cont_demod_t *d)
+{
+    return d ? d->lockingbw : 0;
 }
 
 int jaero_oqpsk_cont_get_spectrum(jaero_oqpsk_cont_demod_t *d, float *mags_db, int n_bins)

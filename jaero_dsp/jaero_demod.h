@@ -59,6 +59,14 @@ int    jaero_pmsk_is_locked(jaero_pmsk_demod_t *d);
 int    jaero_pmsk_get_audio(jaero_pmsk_demod_t *d, double *out, int max_samples);
 void   jaero_pmsk_get_tune_info(jaero_pmsk_demod_t *d, double *mixer_center_hz, double *freq_center_hz, double *fs_hz);
 void   jaero_pmsk_set_manual_tune(jaero_pmsk_demod_t *d, double audio_hz);
+/* AFC control. Web UI disables AFC when the operator clicks-to-tune
+ * so the manual frequency sticks; the 'Auto' button re-enables it. */
+void   jaero_pmsk_set_afc(jaero_pmsk_demod_t *d, int on);
+int    jaero_pmsk_is_afc(jaero_pmsk_demod_t *d);
+/* AFC/locking bandwidth from demod settings — UI uses this to pick a
+ * reasonable zoom window on the spectrum (show ~2x lockingbw around
+ * mixer, not the full 0..Fs/2). */
+double jaero_pmsk_get_lockingbw(jaero_pmsk_demod_t *d);
 /* Compute a magnitude spectrum of the channel's audio for the web UI.
  * mags_db[] is filled with n_bins log-magnitude values covering 0..Fs/2.
  * Values are normalised so peak = 0 dB, floor clamped around -80 dB.
@@ -88,6 +96,9 @@ int    jaero_oqpsk_cont_is_locked(jaero_oqpsk_cont_demod_t *d);
 int    jaero_oqpsk_cont_get_audio(jaero_oqpsk_cont_demod_t *d, double *out, int max_samples);
 void   jaero_oqpsk_cont_get_tune_info(jaero_oqpsk_cont_demod_t *d, double *mixer_center_hz, double *freq_center_hz, double *fs_hz);
 void   jaero_oqpsk_cont_set_manual_tune(jaero_oqpsk_cont_demod_t *d, double audio_hz);
+void   jaero_oqpsk_cont_set_afc(jaero_oqpsk_cont_demod_t *d, int on);
+int    jaero_oqpsk_cont_is_afc(jaero_oqpsk_cont_demod_t *d);
+double jaero_oqpsk_cont_get_lockingbw(jaero_oqpsk_cont_demod_t *d);
 int    jaero_oqpsk_cont_get_spectrum(jaero_oqpsk_cont_demod_t *d, float *mags_db, int n_bins);
 
 #ifdef __cplusplus

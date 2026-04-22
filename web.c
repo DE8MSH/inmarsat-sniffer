@@ -401,7 +401,7 @@ static const char HTML_PAGE[] =
 "      <button id=\"spec-auto\" onclick=\"resetTune()\" style=\"background:#334155;color:#e2e8f0;border:1px solid #475569;border-radius:3px;padding:2px 8px;cursor:pointer;font-size:11px;margin-left:auto\">Auto (AFC)</button>\n"
 "    </div>\n"
 "    <canvas id=\"spec-canvas\" width=\"512\" height=\"220\" style=\"width:100%;background:#0b1220;border:1px solid #334155;border-radius:4px;cursor:crosshair\"></canvas>\n"
-"    <div style=\"font-size:10px;color:#64748b;margin-top:6px;line-height:1.4\">Click on the spectrum to retune this channel to that audio frequency. Red line marks the current demod mixer. Press <b>Auto</b> to release manual tune back to AFC.</div>\n"
+"    <div style=\"font-size:10px;color:#64748b;margin-top:6px;line-height:1.4\">Click the spectrum to manually retune this channel (disables AFC). The marker triangle shows the current demod tune \\u2014 yellow while AFC is pulling, red when manual. Shaded band is the AFC search window. Press <b>Auto (AFC)</b> to hand control back to the tracker.</div>\n"
 "  </div>\n"
 "</div>\n"
 "<script>"
@@ -415,8 +415,12 @@ static const char HTML_PAGE[] =
 "  if(name==='spectrum'){startSpectrum()}else{stopSpectrum()}"
 "}\n"
 
-/* --- Spectrum tab polling + rendering --- */
-"var specTimer=null,specLast=null,specFs=0,specMixer=0;"
+/* --- Spectrum tab polling + rendering ---
+ * JAERO-style: zoom the display to the channel's useful bandwidth
+ * (roughly 2x lockingbw around the demod mixer), filled-area plot
+ * instead of a line, subtle triangle marker at the tune point, and a
+ * translucent AFC bracket band. Peak-hold fades with each frame. */
+"var specTimer=null,specLast=null,specViewLo=0,specViewHi=0,specLockHi=0,specLockLo=0,specPeak=null;"
 "function startSpectrum(){"
 "  if(specTimer)return;"
 "  pollSpectrum();"
@@ -436,6 +440,20 @@ static const char HTML_PAGE[] =
 "    .then(function(d){specLast=d;drawSpectrum(d)})"
 "    .catch(function(){});"
 "}"
+/* Compute the zoom window in Hz. Prefers ~2x lockingbw; falls back to
+ * ~4x baud if lockingbw is missing; never exceeds 0..Fs/2. Returns
+ * {lo, hi} in audio Hz. Re-anchors to mixer_hz. */
+"function pickSpecWindow(d){"
+"  var mx=d.mixer_hz||0;"
+"  var fs2=(d.fs||0)/2;"
+"  var span=(d.lockingbw>0?d.lockingbw*2:((d.baud||1200)*4));"
+"  if(span<2000)span=2000;"
+"  if(span>fs2*2)span=fs2*2;"
+"  var lo=mx-span/2,hi=mx+span/2;"
+"  if(lo<0){hi-=lo;lo=0}"
+"  if(hi>fs2){lo-=(hi-fs2);hi=fs2;if(lo<0)lo=0}"
+"  return{lo:lo,hi:hi}"
+"}"
 "function drawSpectrum(d){"
 "  var cv=document.getElementById('spec-canvas');"
 "  var ctx=cv.getContext('2d');"
@@ -443,36 +461,79 @@ static const char HTML_PAGE[] =
 "  ctx.fillStyle='#0b1220';ctx.fillRect(0,0,W,H);"
 "  if(!d||!d.ok||!d.mags_db){"
 "    ctx.fillStyle='#64748b';ctx.font='12px system-ui';"
-"    ctx.fillText('no data (channel unavailable)',10,20);return;"
+"    ctx.fillText('no data (channel unavailable)',10,20);"
+"    document.getElementById('spec-info').textContent='';"
+"    return;"
 "  }"
-"  specFs=d.fs||0;specMixer=d.mixer_hz||0;"
-/* grid */
-"  ctx.strokeStyle='#1e293b';ctx.lineWidth=1;"
-"  ctx.beginPath();"
+"  var win=pickSpecWindow(d);"
+"  specViewLo=win.lo;specViewHi=win.hi;"
+"  var fs2=d.fs/2,n=d.mags_db.length;"
+/* Bin -> Hz: bin i covers i*fs2/n .. (i+1)*fs2/n. Map the window [lo,hi] to a subset of bins. */
+"  var binLo=Math.max(0,Math.floor(win.lo*n/fs2));"
+"  var binHi=Math.min(n,Math.ceil(win.hi*n/fs2));"
+"  if(binHi<=binLo)binHi=binLo+1;"
+/* Peak hold: track max over time per source bin, fade 0.5 dB/frame */
+"  if(!specPeak||specPeak.length!==n){specPeak=new Array(n).fill(-80)}"
+"  for(var pi=0;pi<n;pi++){"
+"    if(d.mags_db[pi]>specPeak[pi])specPeak[pi]=d.mags_db[pi];"
+"    else specPeak[pi]-=0.5;"
+"    if(specPeak[pi]<-80)specPeak[pi]=-80;"
+"  }"
+/* Helpers */
+"  function binX(b){return (b-binLo)*W/(binHi-binLo)}"
+"  function dbY(db){var y=H*(-db/80);if(y<0)y=0;if(y>H)y=H;return y}"
+/* Grid */
+"  ctx.strokeStyle='#1e293b';ctx.lineWidth=1;ctx.beginPath();"
 "  for(var gy=0;gy<=4;gy++){var y=gy*H/4;ctx.moveTo(0,y);ctx.lineTo(W,y)}"
-"  for(var gx=0;gx<=8;gx++){var x=gx*W/8;ctx.moveTo(x,0);ctx.lineTo(x,H)}"
 "  ctx.stroke();"
-/* spectrum trace */
-"  ctx.strokeStyle='#38bdf8';ctx.lineWidth=1.5;ctx.beginPath();"
-"  var n=d.mags_db.length;"
-"  for(var i=0;i<n;i++){"
-"    var x=i*W/(n-1);"
-"    var db=d.mags_db[i];"  /* range approx -80..0 */
-"    var y=H*(-db/80);"
-"    if(y<0)y=0;if(y>H)y=H;"
-"    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);"
+/* AFC window band (mixer ± lockingbw/2), shaded */
+"  if(d.lockingbw>0){"
+"    var aLo=d.mixer_hz-d.lockingbw/2,aHi=d.mixer_hz+d.lockingbw/2;"
+"    var x1=(aLo-win.lo)/(win.hi-win.lo)*W,x2=(aHi-win.lo)/(win.hi-win.lo)*W;"
+"    ctx.fillStyle='rgba(56,189,248,0.07)';"
+"    ctx.fillRect(x1,0,x2-x1,H);"
+"  }"
+/* Peak-hold trace (faint line on top) */
+"  ctx.strokeStyle='rgba(148,163,184,0.5)';ctx.lineWidth=1;ctx.beginPath();"
+"  for(var pb=binLo;pb<binHi;pb++){"
+"    var px=binX(pb),py=dbY(specPeak[pb]);"
+"    if(pb===binLo)ctx.moveTo(px,py);else ctx.lineTo(px,py);"
 "  }"
 "  ctx.stroke();"
-/* mixer marker (current demod tune) — vertical red line at mixer_hz */
+/* Filled area spectrum */
+"  var grad=ctx.createLinearGradient(0,0,0,H);"
+"  grad.addColorStop(0,'rgba(56,189,248,0.7)');"
+"  grad.addColorStop(1,'rgba(56,189,248,0.05)');"
+"  ctx.fillStyle=grad;ctx.beginPath();ctx.moveTo(0,H);"
+"  for(var i=binLo;i<binHi;i++){"
+"    ctx.lineTo(binX(i),dbY(d.mags_db[i]));"
+"  }"
+"  ctx.lineTo(W,H);ctx.closePath();ctx.fill();"
+"  ctx.strokeStyle='#38bdf8';ctx.lineWidth=1.2;ctx.beginPath();"
+"  for(var j=binLo;j<binHi;j++){"
+"    var jx=binX(j),jy=dbY(d.mags_db[j]);"
+"    if(j===binLo)ctx.moveTo(jx,jy);else ctx.lineTo(jx,jy);"
+"  }"
+"  ctx.stroke();"
+/* Tune marker: downward triangle at top at mixer_hz, thin line below */
 "  if(d.fs>0){"
-"    var mx=(d.mixer_hz/(d.fs/2))*W;"
-"    ctx.strokeStyle='#ef4444';ctx.lineWidth=1.5;"
-"    ctx.beginPath();ctx.moveTo(mx,0);ctx.lineTo(mx,H);ctx.stroke();"
+"    var mx=(d.mixer_hz-win.lo)/(win.hi-win.lo)*W;"
+"    var mkColor=d.afc?'#fbbf24':'#ef4444';"    /* yellow if AFC on, red if manual */
+"    ctx.fillStyle=mkColor;"
+"    ctx.beginPath();ctx.moveTo(mx-5,0);ctx.lineTo(mx+5,0);ctx.lineTo(mx,8);ctx.closePath();ctx.fill();"
+"    ctx.strokeStyle=mkColor;ctx.lineWidth=1;"
+"    ctx.setLineDash([3,3]);ctx.beginPath();"
+"    ctx.moveTo(mx,8);ctx.lineTo(mx,H);ctx.stroke();"
+"    ctx.setLineDash([]);"
 "  }"
-/* info readout */
-"  var info='baud '+d.baud+'  Fs '+(d.fs/1000).toFixed(1)+' kHz  '+"
-"           'mixer '+d.mixer_hz.toFixed(0)+' Hz';"
-"  document.getElementById('spec-info').textContent=info;"
+/* Readouts in the info strip */
+"  var state=d.afc?'<span style=\"color:#fbbf24\">AFC</span>':'<span style=\"color:#ef4444\">Manual</span>';"
+"  var info='baud '+d.baud+'  tune '+d.mixer_hz.toFixed(0)+' Hz  view '+"
+"           (win.lo/1000).toFixed(1)+'\\u2013'+(win.hi/1000).toFixed(1)+' kHz  ['+state+']';"
+"  document.getElementById('spec-info').innerHTML=info;"
+/* Button label reflects state: greyed out when already on AFC */
+"  var btn=document.getElementById('spec-auto');"
+"  if(btn){btn.disabled=d.afc?true:false;btn.style.opacity=d.afc?'0.5':'1'}"
 "}"
 /* Populate channel dropdown from latest state snapshot */
 "function updateSpecChannels(channels){"
@@ -488,22 +549,27 @@ static const char HTML_PAGE[] =
 "  });"
 "  if(!cur&&channels.length)sel.value=channels[0].ch;"
 "}"
-/* Canvas click → /api/tune */
+/* Canvas click → /api/tune at the clicked audio Hz (auto-disables AFC server-side) */
 "document.addEventListener('DOMContentLoaded',function(){"
 "  var cv=document.getElementById('spec-canvas');if(!cv)return;"
 "  cv.addEventListener('click',function(ev){"
-"    var ch=currentSpecCh();if(ch===null||!specFs)return;"
+"    var ch=currentSpecCh();if(ch===null)return;"
+"    if(specViewHi<=specViewLo)return;"
 "    var rect=cv.getBoundingClientRect();"
-"    var x=(ev.clientX-rect.left)/rect.width;"
-"    var hz=x*(specFs/2);"
+"    var frac=(ev.clientX-rect.left)/rect.width;"
+"    var hz=specViewLo+frac*(specViewHi-specViewLo);"
 "    fetch('/api/tune?ch='+ch+'&hz='+hz.toFixed(1))"
 "      .then(function(){pollSpectrum()}).catch(function(){});"
 "  });"
+/* Reset peak-hold buffer when channel changes */
+"  var sel=document.getElementById('spec-ch');"
+"  if(sel)sel.addEventListener('change',function(){specPeak=null;pollSpectrum()});"
 "});"
+/* Auto button re-enables AFC on the current channel */
 "function resetTune(){"
-/* Setting tune to 0 or negative is filtered; send a very large value outside band to trigger AFC-like recenter. Simpler: re-send current mixer to reset. Here we just send 0 and the demod clamps — AFC will pull back in. */
 "  var ch=currentSpecCh();if(ch===null)return;"
-"  fetch('/api/tune?ch='+ch+'&hz=0');"
+"  fetch('/api/tune?ch='+ch+'&afc=1')"
+"    .then(function(){pollSpectrum()}).catch(function(){});"
 "}"
 "var map=L.map('map',{center:[20,0],zoom:3});"
 "L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',"
@@ -770,10 +836,11 @@ static void *client_thread(void *arg) {
         }
         close(fd);
     } else if (strncmp(path, "/api/spectrum", 13) == 0) {
-        /* /api/spectrum?ch=N&bins=512 — N defaults none required, bins=512.
-         * Returns mag-dB array 0..Fs/2 + tune info for rendering. */
+        /* /api/spectrum?ch=N&bins=512
+         * Returns mag-dB array 0..Fs/2 + tune info + lockingbw + AFC state. */
         extern int web_get_spectrum_by_channel(int, float *, int,
-                                               double *, double *, double *, int *);
+                                               double *, double *, double *,
+                                               double *, int *, int *);
         int ch = -1, n_bins = 512;
         const char *q = strchr(path, '?');
         if (q) {
@@ -790,55 +857,70 @@ static void *client_thread(void *arg) {
         if (n_bins > 1024) n_bins = 1024;
 
         float *mags = (float *)malloc(n_bins * sizeof(float));
-        double mixer = 0, fc = 0, fs = 0;
-        int baud = 0;
+        double mixer = 0, fc = 0, fs = 0, lockbw = 0;
+        int baud = 0, afc_on = 0;
         int ok = (ch >= 0 && mags &&
                   web_get_spectrum_by_channel(ch, mags, n_bins,
-                                              &mixer, &fc, &fs, &baud) == 0);
-        char *body = (char *)malloc(n_bins * 8 + 256);
+                                              &mixer, &fc, &fs,
+                                              &lockbw, &baud, &afc_on) == 0);
+        char *body = (char *)malloc(n_bins * 8 + 512);
         if (!body) { free(mags); close(fd); return NULL; }
         int pos = 0;
         if (!ok) {
-            pos = snprintf(body, 256,
+            pos = snprintf(body, 512,
                 "{\"ok\":false,\"ch\":%d,\"reason\":\"channel unavailable\"}", ch);
         } else {
-            pos = snprintf(body, 256,
+            pos = snprintf(body, 512,
                 "{\"ok\":true,\"ch\":%d,\"baud\":%d,"
                 "\"mixer_hz\":%.2f,\"freq_center_hz\":%.2f,\"fs\":%.2f,"
+                "\"lockingbw\":%.2f,\"afc\":%s,"
                 "\"bins\":%d,\"mags_db\":[",
-                ch, baud, mixer, fc, fs, n_bins);
+                ch, baud, mixer, fc, fs, lockbw,
+                afc_on ? "true" : "false", n_bins);
             for (int i = 0; i < n_bins; i++) {
-                pos += snprintf(body + pos, n_bins * 8 + 256 - pos,
+                pos += snprintf(body + pos, n_bins * 8 + 512 - pos,
                                 "%s%.1f", i ? "," : "", mags[i]);
             }
-            pos += snprintf(body + pos, n_bins * 8 + 256 - pos, "]}");
+            pos += snprintf(body + pos, n_bins * 8 + 512 - pos, "]}");
         }
         send_response(fd, "200 OK", "application/json", body, pos);
         free(mags);
         free(body);
         close(fd);
     } else if (strncmp(path, "/api/tune", 9) == 0) {
-        /* /api/tune?ch=N&hz=1234.5 — set demod manual tune to audio Hz. */
-        extern int web_set_tune_by_channel(int, double);
+        /* /api/tune?ch=N[&hz=1234.5][&afc=0|1]
+         * Setting hz automatically disables AFC so the tune sticks
+         * (unless afc=1 also passed). Sending only afc=1 re-enables AFC. */
+        extern int web_set_tune_by_channel(int, double, int);
         int ch = -1;
-        double hz = 0;
-        int got_hz = 0;
+        double hz = -1.0;
+        int afc_action = 0;  /* 0 leave, 1 enable, -1 disable */
+        int got_hz = 0, got_afc = 0;
         const char *q = strchr(path, '?');
         if (q) {
             const char *p = q + 1;
             while (*p) {
                 if (!strncmp(p, "ch=", 3)) ch = atoi(p + 3);
                 if (!strncmp(p, "hz=", 3)) { hz = atof(p + 3); got_hz = 1; }
+                if (!strncmp(p, "afc=", 4)) {
+                    got_afc = 1;
+                    afc_action = (atoi(p + 4) > 0) ? 1 : -1;
+                }
                 const char *amp = strchr(p, '&');
                 if (!amp) break;
                 p = amp + 1;
             }
         }
-        char body[128];
-        int rc = (ch >= 0 && got_hz) ? web_set_tune_by_channel(ch, hz) : -1;
+        /* If hz was set and afc wasn't explicitly toggled, auto-disable AFC */
+        if (got_hz && !got_afc) afc_action = -1;
+        char body[160];
+        int rc = (ch >= 0 && (got_hz || got_afc))
+                 ? web_set_tune_by_channel(ch, got_hz ? hz : -1.0, afc_action)
+                 : -1;
         int blen = snprintf(body, sizeof(body),
-            "{\"ok\":%s,\"ch\":%d,\"hz\":%.2f}",
-            rc == 0 ? "true" : "false", ch, hz);
+            "{\"ok\":%s,\"ch\":%d,\"hz\":%.2f,\"afc\":%s}",
+            rc == 0 ? "true" : "false", ch, hz,
+            afc_action > 0 ? "true" : (afc_action < 0 ? "false" : "null"));
         send_response(fd, "200 OK", "application/json", body, blen);
         close(fd);
     } else {
