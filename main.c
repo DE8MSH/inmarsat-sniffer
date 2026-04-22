@@ -514,6 +514,7 @@ static void *spewer_thread(void *arg) {
 static void print_status(void) {
     unsigned long stdc = atomic_load(&stat_stdc_frames);
     unsigned long drops = atomic_load(&stat_drops);
+    unsigned long feed_drops = feed_get_json_drops();
     unsigned long sc_ok = atomic_load(&stat_stdc_crc_ok);
     unsigned long sc_fail = atomic_load(&stat_stdc_crc_fail);
     unsigned long sb_sum = atomic_load(&stat_stdc_ber_sum);
@@ -534,19 +535,23 @@ static void print_status(void) {
     else
         snprintf(burst_str, sizeof(burst_str), "%lu", bursts);
 
+    char fd_buf[24] = "";
+    if (feed_drops > 0)
+        snprintf(fd_buf, sizeof(fd_buf), " feed_drop:%lu", feed_drops);
+
     if (op_mode == MODE_AERO) {
-        fprintf(stderr, "\r[Aero: %s bursts %lu msgs CRC:%lu | drop:%lu]   ",
-                burst_str, msgs, ac_ok, drops);
+        fprintf(stderr, "\r[Aero: %s bursts %lu msgs CRC:%lu | drop:%lu%s]   ",
+                burst_str, msgs, ac_ok, drops, fd_buf);
     } else if (op_mode == MODE_STDC) {
-        fprintf(stderr, "\r[STD-C: %lu %s BER:%.2f CRC:%lu/%lu | drop:%lu]   ",
+        fprintf(stderr, "\r[STD-C: %lu %s BER:%.2f CRC:%lu/%lu | drop:%lu%s]   ",
                 stdc, synced ? "SYNC" : "SRCH",
-                stdc_ber, sc_ok, sc_ok + sc_fail, drops);
+                stdc_ber, sc_ok, sc_ok + sc_fail, drops, fd_buf);
     } else {
         fprintf(stderr, "\r[STD-C: %lu %s BER:%.2f CRC:%lu/%lu | "
-                "Aero: %s bursts %lu msgs CRC:%lu | drop:%lu]   ",
+                "Aero: %s bursts %lu msgs CRC:%lu | drop:%lu%s]   ",
                 stdc, synced ? "SYNC" : "SRCH",
                 stdc_ber, sc_ok, sc_ok + sc_fail,
-                burst_str, msgs, ac_ok, drops);
+                burst_str, msgs, ac_ok, drops, fd_buf);
     }
 }
 

@@ -211,9 +211,12 @@ static int build_json(char *buf, int maxlen) {
      * aero-only mode (default). Avoids showing a dead tab with no data. */
     extern op_mode_t op_mode;
     int stdc_enabled = (op_mode != MODE_AERO);
+    extern unsigned long feed_get_json_drops(void);
     pos += snprintf(buf + pos, maxlen - pos,
-        "{\"t\":%.3f,\"stdc_enabled\":%s,\"total_acars\":%lu,",
-        now_unix(), stdc_enabled ? "true" : "false", state.total_acars);
+        "{\"t\":%.3f,\"stdc_enabled\":%s,\"total_acars\":%lu,"
+        "\"feed_drops\":%lu,",
+        now_unix(), stdc_enabled ? "true" : "false", state.total_acars,
+        feed_get_json_drops());
 
     /* STD-C messages */
     pos += snprintf(buf + pos, maxlen - pos, "\"stdc\":[");

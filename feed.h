@@ -27,4 +27,10 @@ void feed_aero_message(const aero_message_t *msg);
 /* Shut down the feed subsystem. */
 void feed_shutdown(void);
 
+/* Number of JSON lines dropped because the stdout writer queue was full
+ * (downstream pipe consumer is stalled). Exposed for the status line and
+ * web dashboard so operators can tell decode is healthy but the feed
+ * sink is falling behind. */
+unsigned long feed_get_json_drops(void);
+
 #endif

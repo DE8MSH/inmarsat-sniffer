@@ -8,6 +8,8 @@
 #include <arpa/inet.h>
 #include <math.h>
 #include <netinet/in.h>
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -15,6 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "blocking_queue.h"
 #include "feed.h"
 
 extern int feed_enabled;
@@ -33,6 +36,46 @@ extern int udp_count;
 static int udp_sockets[UDP_MAX];
 static struct sockaddr_in udp_addrs[UDP_MAX];
 static int initialized = 0;
+
+/* ---- Stdout writer thread ----
+ * fwrite(stdout) blocks when a downstream pipe consumer stalls and the
+ * 64KB kernel pipe buffer fills. Historically this stalled whichever
+ * thread produced the message — for STD-C, that's the main channelizer
+ * consumer, so samples_queue would fill and stat_drops would climb to
+ * tens of thousands while decoding froze. Decouple the decode pipeline
+ * from stdout by handing JSON strings to a dedicated writer thread. */
+#define FEED_QUEUE_CAPACITY 256
+typedef struct {
+    char *data;
+    int   len;
+} feed_json_msg_t;
+
+static Blocking_Queue feed_queue;
+static pthread_t feed_writer_tid;
+static int       feed_writer_running = 0;
+static atomic_ulong stat_feed_drops = 0;
+
+unsigned long feed_get_json_drops(void) {
+    return atomic_load(&stat_feed_drops);
+}
+
+static void *feed_writer_fn(void *arg) {
+    (void)arg;
+    for (;;) {
+        feed_json_msg_t *m = NULL;
+        int rc = blocking_queue_take(&feed_queue, &m);
+        if (rc == BQ_CLOSED) break;
+        if (rc != 0 || !m) continue;
+        if (m->data && m->len > 0) {
+            fwrite(m->data, 1, m->len, stdout);
+            fputc('\n', stdout);
+            fflush(stdout);
+        }
+        free(m->data);
+        free(m);
+    }
+    return NULL;
+}
 
 void feed_init(void) {
     for (int i = 0; i < udp_count; i++) {
@@ -70,15 +113,44 @@ void feed_init(void) {
         }
     }
 
+    /* Spawn stdout writer thread if --feed enabled. Keeps decode pipeline
+     * immune to downstream pipe stalls. */
+    if (feed_enabled) {
+        if (blocking_queue_init(&feed_queue, FEED_QUEUE_CAPACITY) == 0) {
+            if (pthread_create(&feed_writer_tid, NULL,
+                               feed_writer_fn, NULL) == 0) {
+                feed_writer_running = 1;
+            } else {
+                perror("feed: pthread_create");
+                blocking_queue_destroy(&feed_queue);
+            }
+        } else {
+            fprintf(stderr, "feed: failed to init writer queue\n");
+        }
+    }
+
     initialized = 1;
 }
 
 static void send_json(const char *json, int len) {
-    /* stdout feed */
-    if (feed_enabled) {
-        fwrite(json, 1, len, stdout);
-        fputc('\n', stdout);
-        fflush(stdout);
+    /* stdout feed — hand off to writer thread, drop on full */
+    if (feed_enabled && feed_writer_running) {
+        feed_json_msg_t *m = (feed_json_msg_t *)malloc(sizeof(*m));
+        char *copy = (char *)malloc(len);
+        if (!m || !copy) {
+            free(m);
+            free(copy);
+            atomic_fetch_add(&stat_feed_drops, 1);
+        } else {
+            memcpy(copy, json, len);
+            m->data = copy;
+            m->len  = len;
+            if (blocking_queue_add(&feed_queue, m) != 0) {
+                free(copy);
+                free(m);
+                atomic_fetch_add(&stat_feed_drops, 1);
+            }
+        }
     }
 
     /* UDP endpoints */
@@ -393,11 +465,29 @@ void feed_aero_message(const aero_message_t *msg) {
 }
 
 void feed_shutdown(void) {
+    if (feed_writer_running) {
+        blocking_queue_close(&feed_queue);
+        pthread_join(feed_writer_tid, NULL);
+        /* Drain any leftover entries */
+        for (;;) {
+            feed_json_msg_t *m = NULL;
+            int rc = blocking_queue_poll(&feed_queue, &m);
+            if (rc != 0 || !m) break;
+            free(m->data);
+            free(m);
+        }
+        blocking_queue_destroy(&feed_queue);
+        feed_writer_running = 0;
+    }
     for (int i = 0; i < udp_count; i++) {
         if (udp_sockets[i] >= 0) {
             close(udp_sockets[i]);
             udp_sockets[i] = -1;
         }
+    }
+    if (jaero_udp_sock >= 0) {
+        close(jaero_udp_sock);
+        jaero_udp_sock = -1;
     }
     initialized = 0;
 }
