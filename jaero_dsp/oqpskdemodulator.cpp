@@ -487,6 +487,14 @@ void OqpskDemodulator::processAudio(const short *data, int num_samples)
                 dt.update(pt_qpsk);
                 pt_qpsk *= cpx_type(cos(marg->Val), sin(marg->Val));
 
+                /* Ring-buffer the per-symbol constellation point for the
+                 * web UI scatter plot. Unconditional — inexpensive, and
+                 * only read when the Spectrum tab is open. */
+                if (!pointbuff.empty()) {
+                    pointbuff[pointbuff_ptr] = pt_qpsk;
+                    pointbuff_ptr = (pointbuff_ptr + 1) % (int)pointbuff.size();
+                }
+
                 /* MSE */
                 mse = msecalc->Update(pt_qpsk);
 

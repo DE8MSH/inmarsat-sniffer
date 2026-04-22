@@ -374,6 +374,14 @@ void MskDemodulator::processAudio(const short *ptr, int numofsamples)
             dt.update(pt_msk);
             pt_msk *= cpx_type(cos(marg->Val), sin(marg->Val));
 
+            /* Ring-buffer the per-symbol constellation point for the web UI
+             * scatter plot. Always on — cheap, used only when someone opens
+             * the Spectrum tab. */
+            if (!pointbuff.empty()) {
+                pointbuff[pointbuff_ptr] = pt_msk;
+                pointbuff_ptr = (pointbuff_ptr + 1) % (int)pointbuff.size();
+            }
+
             double tda = (fabs(pt_msk.real() * 0.75) - 1.0);
             double tdb = (fabs(pt_msk.imag() * 0.75) - 1.0);
             mse = msema->Update((tda * tda) + (tdb * tdb));
