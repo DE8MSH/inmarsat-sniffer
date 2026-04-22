@@ -56,7 +56,7 @@ int    jaero_pmsk_is_locked(jaero_pmsk_demod_t *d);
 /* Spectrum / tune API for the web UI. get_baseband() copies up to
  * max_samples complex floats (interleaved re,im) to `out`; returns count
  * actually written. get_tune_info() fills current audio-Hz values. */
-int    jaero_pmsk_get_baseband(jaero_pmsk_demod_t *d, float *out, int max_samples);
+int    jaero_pmsk_get_audio(jaero_pmsk_demod_t *d, double *out, int max_samples);
 void   jaero_pmsk_get_tune_info(jaero_pmsk_demod_t *d, double *mixer_center_hz, double *freq_center_hz, double *fs_hz);
 void   jaero_pmsk_set_manual_tune(jaero_pmsk_demod_t *d, double audio_hz);
 
@@ -80,7 +80,7 @@ void jaero_oqpsk_cont_set_cassign_callback(jaero_oqpsk_cont_demod_t *d, jaero_ca
 double jaero_oqpsk_cont_get_mse(jaero_oqpsk_cont_demod_t *d);
 double jaero_oqpsk_cont_get_ebno(jaero_oqpsk_cont_demod_t *d);
 int    jaero_oqpsk_cont_is_locked(jaero_oqpsk_cont_demod_t *d);
-int    jaero_oqpsk_cont_get_baseband(jaero_oqpsk_cont_demod_t *d, float *out, int max_samples);
+int    jaero_oqpsk_cont_get_audio(jaero_oqpsk_cont_demod_t *d, double *out, int max_samples);
 void   jaero_oqpsk_cont_get_tune_info(jaero_oqpsk_cont_demod_t *d, double *mixer_center_hz, double *freq_center_hz, double *fs_hz);
 void   jaero_oqpsk_cont_set_manual_tune(jaero_oqpsk_cont_demod_t *d, double audio_hz);
 

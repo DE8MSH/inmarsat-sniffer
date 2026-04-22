@@ -206,15 +206,15 @@ void MskDemodulator::setCPUReduce(bool s) { cpuReduce = s; }
 void MskDemodulator::setScatterPointType(ScatterPointType t) { scatterpointtype = (int)t; }
 double MskDemodulator::getCurrentFreq() { return mixer_center.GetFreqHz(); }
 
-int MskDemodulator::get_baseband_snapshot(cpx_type *out, int max_samples)
+int MskDemodulator::get_audio_snapshot(double *out, int max_samples)
 {
     if (!out || max_samples <= 0) return 0;
-    int n = (int)bbcycbuff.size();
+    int n = (int)spectrumcycbuff.size();
     if (n > max_samples) n = max_samples;
-    int start = bbcycbuff_ptr % (int)bbcycbuff.size();
+    int start = spectrumcycbuff_ptr % (int)spectrumcycbuff.size();
     for (int i = 0; i < n; i++) {
-        int idx = (start + i) % (int)bbcycbuff.size();
-        out[i] = bbcycbuff[idx];
+        int idx = (start + i) % (int)spectrumcycbuff.size();
+        out[i] = spectrumcycbuff[idx];
     }
     return n;
 }

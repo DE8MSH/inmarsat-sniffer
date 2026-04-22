@@ -72,13 +72,12 @@ public:
     double getMSE() const { return mse; }
     double getEbNo() const { return ebnomeasure ? ebnomeasure->EbNo : 0; }
 
-    /* Baseband spectrum access for the web UI.
-     * bbcycbuff is the ring of mixer_center-mixed complex samples that the
-     * coarse-freq-estimator FFTs for AFC. Reading it costs nothing in the
-     * audio thread; we just memcpy the ring into a caller-supplied buffer.
-     * Unlocked — samples may be ring-wrapped mid-copy, fine for a magnitude
-     * spectrum display (phase/order doesn't affect magnitudes). */
-    int get_baseband_snapshot(cpx_type *out, int max_samples);
+    /* Audio spectrum access for the web UI. spectrumcycbuff is the ring of
+     * raw real audio samples the demod sees (before mixer_center mix), so
+     * its FFT shows signals at their actual audio frequency — the user can
+     * see the peak offset from freq_center and click to retune.
+     * Unlocked memcpy of the ring; fine for magnitude spectrum. */
+    int get_audio_snapshot(double *out, int max_samples);
     double getMixerCenterHz() { return mixer_center.GetFreqHz(); }
     double getFs() const { return Fs; }
     double getFreqCenterHz() const { return freq_center; }

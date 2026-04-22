@@ -159,18 +159,15 @@ void OqpskDemodulator::setScatterPointType(ScatterPointType type) { scatterpoint
 double OqpskDemodulator::getCurrentFreq()       { return mixer_center.GetFreqHz(); }
 void OqpskDemodulator::invalidatesettings()     { Fs = -1; fb = -1; }
 
-int OqpskDemodulator::get_baseband_snapshot(cpx_type *out, int max_samples)
+int OqpskDemodulator::get_audio_snapshot(double *out, int max_samples)
 {
     if (!out || max_samples <= 0) return 0;
-    int n = (int)bbcycbuff.size();
+    int n = (int)spectrumcycbuff.size();
     if (n > max_samples) n = max_samples;
-    /* Unrolled copy of the ring in time order starting at bbcycbuff_ptr
-     * (oldest sample). Audio thread may be writing concurrently — samples
-     * at the boundary may be inconsistent but magnitude spectrum is robust. */
-    int start = bbcycbuff_ptr % (int)bbcycbuff.size();
+    int start = spectrumcycbuff_ptr % (int)spectrumcycbuff.size();
     for (int i = 0; i < n; i++) {
-        int idx = (start + i) % (int)bbcycbuff.size();
-        out[i] = bbcycbuff[idx];
+        int idx = (start + i) % (int)spectrumcycbuff.size();
+        out[i] = spectrumcycbuff[idx];
     }
     return n;
 }

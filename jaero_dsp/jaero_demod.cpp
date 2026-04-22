@@ -419,19 +419,10 @@ int jaero_pmsk_is_locked(jaero_pmsk_demod_t *d) {
     return (d && d->sigstat_good) ? 1 : 0;
 }
 
-int jaero_pmsk_get_baseband(jaero_pmsk_demod_t *d, float *out, int max_samples)
+int jaero_pmsk_get_audio(jaero_pmsk_demod_t *d, double *out, int max_samples)
 {
     if (!d || !d->demod || !out || max_samples <= 0) return 0;
-    /* Demod's snapshot writes cpx_type (std::complex<float>). Caller-visible
-     * output is interleaved re,im floats, so max_samples here refers to
-     * complex samples (each = 2 floats). */
-    std::vector<cpx_type> tmp(max_samples);
-    int n = d->demod->get_baseband_snapshot(tmp.data(), max_samples);
-    for (int i = 0; i < n; i++) {
-        out[i*2]   = tmp[i].real();
-        out[i*2+1] = tmp[i].imag();
-    }
-    return n;
+    return d->demod->get_audio_snapshot(out, max_samples);
 }
 
 void jaero_pmsk_get_tune_info(jaero_pmsk_demod_t *d, double *mc, double *fc, double *fs)
@@ -617,16 +608,10 @@ int jaero_oqpsk_cont_is_locked(jaero_oqpsk_cont_demod_t *d) {
     return (d && d->sigstat_good) ? 1 : 0;
 }
 
-int jaero_oqpsk_cont_get_baseband(jaero_oqpsk_cont_demod_t *d, float *out, int max_samples)
+int jaero_oqpsk_cont_get_audio(jaero_oqpsk_cont_demod_t *d, double *out, int max_samples)
 {
     if (!d || !d->demod || !out || max_samples <= 0) return 0;
-    std::vector<cpx_type> tmp(max_samples);
-    int n = d->demod->get_baseband_snapshot(tmp.data(), max_samples);
-    for (int i = 0; i < n; i++) {
-        out[i*2]   = tmp[i].real();
-        out[i*2+1] = tmp[i].imag();
-    }
-    return n;
+    return d->demod->get_audio_snapshot(out, max_samples);
 }
 
 void jaero_oqpsk_cont_get_tune_info(jaero_oqpsk_cont_demod_t *d, double *mc, double *fc, double *fs)
