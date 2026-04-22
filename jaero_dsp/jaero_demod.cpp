@@ -36,14 +36,19 @@ static int compute_spectrum(const double *audio, int num_samples,
         windowed[i] = audio[i] * w;
     }
 
+    /* JFFT's real FFT interface takes size = 2*nfft, treats the input as
+     * nfft complex values (packing pairs of reals), and writes 2*nfft
+     * complex output bins (bins nfft..2*nfft-1 are the conjugate mirror).
+     * For an N-sample real-input FFT: init(N/2), fft_real(real, spec, N),
+     * and the one-sided spectrum lives in bins 0..N/2. */
     JFFT jfft;
-    int fs2 = fft_size;
-    jfft.init(fs2);
-    std::vector<JFFT::cpx_type> spec(fft_size / 2);
-    jfft.fft_real(windowed.data(), spec.data(), fft_size);
+    int nfft = fft_size / 2;
+    jfft.init(nfft);  /* init() takes int& and may round to a supported size */
+    std::vector<JFFT::cpx_type> spec(2 * nfft);
+    jfft.fft_real(windowed.data(), spec.data(), 2 * nfft);
 
-    /* One-sided magnitude^2 */
-    int half = fft_size / 2;
+    /* One-sided magnitude^2 (bins 0..nfft inclusive, covers 0..Fs/2) */
+    int half = nfft;
     std::vector<double> mag2(half);
     double peak = 0;
     for (int i = 0; i < half; i++) {
