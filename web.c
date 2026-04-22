@@ -442,7 +442,7 @@ static const char HTML_PAGE[] =
 "var nPos=0;"
 "if(d.aircraft){d.aircraft.forEach(function(a){if(a.fixes&&a.fixes.length)nPos++})}"
 "document.getElementById('n-ac').textContent=d.aircraft?d.aircraft.length:0;"
-"document.getElementById('n-acars').textContent=d.total_acars||(d.aircraft?d.aircraft.length:0);"
+"document.getElementById('n-aircraft').textContent=d.aircraft?d.aircraft.length:0;"
 "document.getElementById('n-pos').textContent=nPos;"
 "document.getElementById('n-stdc').textContent=d.stdc?d.stdc.length:0;"
 "/* Hide STD-C tab and counter when not in a mode that decodes it */"
