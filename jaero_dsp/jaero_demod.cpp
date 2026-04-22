@@ -9,6 +9,65 @@
 #include "mskdemodulator.h"
 #include "oqpskdemodulator.h"
 #include "aerol.h"
+#include "jfft.h"
+
+#include <cmath>
+#include <vector>
+
+/* Shared FFT-based magnitude spectrum helper for both demods.
+ * Takes up to 4096 audio samples, applies a Hann window, runs a real-input
+ * FFT, and writes n_bins log-magnitude values (peak=0 dB, clamped at -80)
+ * covering 0..Fs/2. n_bins can be less than half the FFT size — we
+ * max-pool within each bin range for a cleaner display. Runs on the web
+ * thread; no allocations outside this call. */
+static int compute_spectrum(const double *audio, int num_samples,
+                            float *mags_db, int n_bins)
+{
+    if (!audio || num_samples < 64 || !mags_db || n_bins < 2) return 0;
+    /* Round down to next power of two for FFT */
+    int fft_size = 1;
+    while (fft_size * 2 <= num_samples && fft_size * 2 <= 4096) fft_size *= 2;
+    if (fft_size < 64) return 0;
+
+    std::vector<double> windowed(fft_size);
+    double two_pi = 2.0 * M_PI;
+    for (int i = 0; i < fft_size; i++) {
+        double w = 0.5 * (1.0 - std::cos(two_pi * i / (fft_size - 1)));
+        windowed[i] = audio[i] * w;
+    }
+
+    JFFT jfft;
+    int fs2 = fft_size;
+    jfft.init(fs2);
+    std::vector<JFFT::cpx_type> spec(fft_size / 2);
+    jfft.fft_real(windowed.data(), spec.data(), fft_size);
+
+    /* One-sided magnitude^2 */
+    int half = fft_size / 2;
+    std::vector<double> mag2(half);
+    double peak = 0;
+    for (int i = 0; i < half; i++) {
+        double r = spec[i].real(), ii = spec[i].imag();
+        mag2[i] = r * r + ii * ii;
+        if (mag2[i] > peak) peak = mag2[i];
+    }
+    if (peak <= 0) peak = 1e-12;
+
+    /* Max-pool from `half` bins down to n_bins */
+    for (int b = 0; b < n_bins; b++) {
+        int lo = (int)((long long)b * half / n_bins);
+        int hi = (int)((long long)(b + 1) * half / n_bins);
+        if (hi > half) hi = half;
+        if (hi <= lo) hi = lo + 1;
+        double m = 0;
+        for (int i = lo; i < hi; i++) if (mag2[i] > m) m = mag2[i];
+        double db = 10.0 * std::log10(m / peak + 1e-12);
+        if (db < -80.0) db = -80.0;
+        if (db > 0.0)   db = 0.0;
+        mags_db[b] = (float)db;
+    }
+    return 1;
+}
 
 #define JAERO_BLOCK_SIZE 8192  /* large enough for JFastFir's overlap-save FFT */
 
@@ -438,6 +497,14 @@ void jaero_pmsk_set_manual_tune(jaero_pmsk_demod_t *d, double audio_hz)
     if (d && d->demod) d->demod->setManualTune(audio_hz);
 }
 
+int jaero_pmsk_get_spectrum(jaero_pmsk_demod_t *d, float *mags_db, int n_bins)
+{
+    if (!d || !d->demod || !mags_db || n_bins < 2) return 0;
+    std::vector<double> audio(4096);
+    int n = d->demod->get_audio_snapshot(audio.data(), 4096);
+    return compute_spectrum(audio.data(), n, mags_db, n_bins);
+}
+
 /* ============================================================
  * Continuous OQPSK demodulator (Aero H/H+/L, 10500 baud forward link)
  * Uses OqpskDemodulator (not BurstOqpskDemodulator).
@@ -625,6 +692,14 @@ void jaero_oqpsk_cont_get_tune_info(jaero_oqpsk_cont_demod_t *d, double *mc, dou
 void jaero_oqpsk_cont_set_manual_tune(jaero_oqpsk_cont_demod_t *d, double audio_hz)
 {
     if (d && d->demod) d->demod->setManualTune(audio_hz);
+}
+
+int jaero_oqpsk_cont_get_spectrum(jaero_oqpsk_cont_demod_t *d, float *mags_db, int n_bins)
+{
+    if (!d || !d->demod || !mags_db || n_bins < 2) return 0;
+    std::vector<double> audio(4096);
+    int n = d->demod->get_audio_snapshot(audio.data(), 4096);
+    return compute_spectrum(audio.data(), n, mags_db, n_bins);
 }
 
 } /* extern "C" */
