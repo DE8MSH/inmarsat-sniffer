@@ -120,6 +120,51 @@ void web_get_channel_info(chan_web_info_t *out, int *n) {
     *n = count;
 }
 
+/* ---- Web spectrum / tune accessors ----
+ * Used by /api/spectrum and /api/tune. Look up channel by id, call the
+ * matching demod's get_spectrum / set_manual_tune / get_tune_info.
+ * Returns 0 on success, -1 if channel not found or no active demod. */
+int web_get_spectrum_by_channel(int channel_id, float *mags_db, int n_bins,
+                                 double *mixer_hz, double *freq_center_hz,
+                                 double *fs_hz, int *baud_out)
+{
+    for (int i = 0; i < num_jaero_chans; i++) {
+        if (jaero_chans[i].channel_id != channel_id) continue;
+        if (baud_out) *baud_out = jaero_chans[i].baud_rate;
+        if (jaero_chans[i].pmsk) {
+            jaero_pmsk_get_tune_info(jaero_chans[i].pmsk,
+                                      mixer_hz, freq_center_hz, fs_hz);
+            return jaero_pmsk_get_spectrum(jaero_chans[i].pmsk,
+                                            mags_db, n_bins) ? 0 : -1;
+        }
+        if (jaero_chans[i].oqpsk_cont) {
+            jaero_oqpsk_cont_get_tune_info(jaero_chans[i].oqpsk_cont,
+                                            mixer_hz, freq_center_hz, fs_hz);
+            return jaero_oqpsk_cont_get_spectrum(jaero_chans[i].oqpsk_cont,
+                                                  mags_db, n_bins) ? 0 : -1;
+        }
+        return -1;  /* no spectrum-capable demod on this channel */
+    }
+    return -1;
+}
+
+int web_set_tune_by_channel(int channel_id, double audio_hz)
+{
+    for (int i = 0; i < num_jaero_chans; i++) {
+        if (jaero_chans[i].channel_id != channel_id) continue;
+        if (jaero_chans[i].pmsk) {
+            jaero_pmsk_set_manual_tune(jaero_chans[i].pmsk, audio_hz);
+            return 0;
+        }
+        if (jaero_chans[i].oqpsk_cont) {
+            jaero_oqpsk_cont_set_manual_tune(jaero_chans[i].oqpsk_cont, audio_hz);
+            return 0;
+        }
+        return -1;
+    }
+    return -1;
+}
+
 /* Per-channel worker: pop IQ from ring, feed matching demod. Runs until
  * thread_run is cleared. */
 static void *chan_worker_fn(void *arg)
