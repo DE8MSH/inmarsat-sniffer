@@ -401,7 +401,7 @@ static const char HTML_PAGE[] =
 "      <button id=\"spec-auto\" onclick=\"resetTune()\" style=\"background:#334155;color:#e2e8f0;border:1px solid #475569;border-radius:3px;padding:2px 8px;cursor:pointer;font-size:11px;margin-left:auto\">Auto (AFC)</button>\n"
 "    </div>\n"
 "    <canvas id=\"spec-canvas\" width=\"512\" height=\"220\" style=\"width:100%;background:#0b1220;border:1px solid #334155;border-radius:4px;cursor:crosshair\"></canvas>\n"
-"    <div style=\"font-size:10px;color:#64748b;margin-top:6px;line-height:1.4\">Full-band view (0\\u2013Fs/2). Click the spectrum to manually retune this channel (auto-disables AFC). The triangle marker shows the current demod tune \\u2014 yellow while AFC is pulling, red when manual. Press <b>Auto (AFC)</b> to hand control back to the tracker.</div>\n"
+"    <div style=\"font-size:10px;color:#64748b;margin-top:6px;line-height:1.4\">View is zoomed around this channel's audio carrier so you can see the signal in context. Click the spectrum to manually retune (auto-disables AFC). The triangle marker is the current demod tune \\u2014 yellow while AFC is pulling, red when manual. Press <b>Auto (AFC)</b> to hand control back to the tracker.</div>\n"
 "  </div>\n"
 "</div>\n"
 "<script>"
@@ -416,15 +416,16 @@ static const char HTML_PAGE[] =
 "}\n"
 
 /* --- Spectrum tab polling + rendering ---
- * Full-bandwidth view (0..Fs/2) with a filled area plot. The tune
- * marker is a small triangle at the top of the canvas plus a dashed
- * line below it so it doesn't dominate wide channels like the old
- * solid red line did. Yellow while AFC is pulling, red when manual. */
-"var specTimer=null,specLast=null,specFs=0;"
+ * Moderate zoom centered on the audio carrier (freq_center_hz), sized
+ * so the signal takes a reasonable portion of the canvas (like JAERO
+ * does per demod type). Y-axis has ~10 dB of headroom so the peak
+ * doesn't slam against the top. Bottom axis shows kHz tick labels so
+ * you know where you are. */
+"var specTimer=null,specLast=null,specViewLo=0,specViewHi=0;"
 "function startSpectrum(){"
 "  if(specTimer)return;"
 "  pollSpectrum();"
-"  specTimer=setInterval(pollSpectrum,250);"  /* 4 Hz */
+"  specTimer=setInterval(pollSpectrum,250);"
 "}"
 "function stopSpectrum(){"
 "  if(specTimer){clearInterval(specTimer);specTimer=null}"
@@ -440,6 +441,21 @@ static const char HTML_PAGE[] =
 "    .then(function(d){specLast=d;drawSpectrum(d)})"
 "    .catch(function(){});"
 "}"
+/* Pick a view window in Hz. Anchor to freq_center (the audio carrier
+ * the demod was configured around) rather than mixer, so the view
+ * doesn't jitter while AFC hunts. Width = roughly max(2*lockingbw,
+ * 4*baud, 3kHz) — signal-sized with a decent margin on each side.
+ * Clipped to [0, Fs/2]. */
+"function pickSpecWindow(d){"
+"  var fc=d.freq_center_hz||d.mixer_hz||0;"
+"  var fs2=(d.fs||0)/2;"
+"  var span=Math.max((d.lockingbw||0)*2,(d.baud||1200)*4,3000);"
+"  if(span>fs2*1.9)span=fs2*1.9;"
+"  var lo=fc-span/2,hi=fc+span/2;"
+"  if(lo<0){hi-=lo;lo=0}"
+"  if(hi>fs2){lo-=(hi-fs2);hi=fs2;if(lo<0)lo=0}"
+"  return{lo:lo,hi:hi}"
+"}"
 "function drawSpectrum(d){"
 "  var cv=document.getElementById('spec-canvas');"
 "  var ctx=cv.getContext('2d');"
@@ -451,43 +467,61 @@ static const char HTML_PAGE[] =
 "    document.getElementById('spec-info').textContent='';"
 "    return;"
 "  }"
-"  specFs=d.fs||0;"
-"  var n=d.mags_db.length;"
-"  function dbY(db){var y=H*(-db/80);if(y<0)y=0;if(y>H)y=H;return y}"
-/* Grid */
+"  var win=pickSpecWindow(d);specViewLo=win.lo;specViewHi=win.hi;"
+"  var fs2=d.fs/2,n=d.mags_db.length;"
+"  var binLo=Math.max(0,Math.floor(win.lo*n/fs2));"
+"  var binHi=Math.min(n,Math.ceil(win.hi*n/fs2));"
+"  if(binHi<=binLo)binHi=binLo+1;"
+/* Reserve room for the bottom axis labels (~18px). */
+"  var axisH=18,plotH=H-axisH;"
+/* Y scale: +5 dB at top (headroom), -85 dB at bottom — 90 dB range. */
+"  var TOP_DB=5,BOT_DB=-85,RANGE=TOP_DB-BOT_DB;"
+"  function dbY(db){var y=plotH*(TOP_DB-db)/RANGE;if(y<0)y=0;if(y>plotH)y=plotH;return y}"
+"  function hzX(hz){return (hz-win.lo)/(win.hi-win.lo)*W}"
+"  function binX(b){return (b-binLo)*W/(binHi-binLo)}"
+/* Horizontal gridlines (0, -20, -40, -60 dB) */
 "  ctx.strokeStyle='#1e293b';ctx.lineWidth=1;ctx.beginPath();"
-"  for(var gy=0;gy<=4;gy++){var y=gy*H/4;ctx.moveTo(0,y);ctx.lineTo(W,y)}"
-"  for(var gx=0;gx<=8;gx++){var x=gx*W/8;ctx.moveTo(x,0);ctx.lineTo(x,H)}"
+"  [0,-20,-40,-60].forEach(function(db){var y=dbY(db);ctx.moveTo(0,y);ctx.lineTo(W,y)});"
 "  ctx.stroke();"
-/* Filled area spectrum, gradient top-to-bottom */
-"  var grad=ctx.createLinearGradient(0,0,0,H);"
-"  grad.addColorStop(0,'rgba(56,189,248,0.7)');"
+/* Vertical gridlines + kHz labels at round frequencies */
+"  var winKHz=(win.hi-win.lo)/1000;"
+"  var tickStep=winKHz>15?2:(winKHz>8?1:0.5);"
+"  var firstTick=Math.ceil(win.lo/1000/tickStep)*tickStep;"
+"  ctx.strokeStyle='#1e293b';ctx.fillStyle='#64748b';"
+"  ctx.font='10px system-ui';ctx.textAlign='center';"
+"  for(var t=firstTick;t*1000<=win.hi;t+=tickStep){"
+"    var tx=hzX(t*1000);"
+"    ctx.beginPath();ctx.moveTo(tx,0);ctx.lineTo(tx,plotH);ctx.stroke();"
+"    ctx.fillText(t.toFixed(tickStep<1?1:0)+' kHz',tx,plotH+13);"
+"  }"
+/* Filled area spectrum */
+"  var grad=ctx.createLinearGradient(0,0,0,plotH);"
+"  grad.addColorStop(0,'rgba(56,189,248,0.75)');"
 "  grad.addColorStop(1,'rgba(56,189,248,0.05)');"
-"  ctx.fillStyle=grad;ctx.beginPath();ctx.moveTo(0,H);"
-"  for(var i=0;i<n;i++){"
-"    var x=i*W/(n-1);"
-"    ctx.lineTo(x,dbY(d.mags_db[i]));"
-"  }"
-"  ctx.lineTo(W,H);ctx.closePath();ctx.fill();"
-/* Outline on top of fill */
+"  ctx.fillStyle=grad;ctx.beginPath();ctx.moveTo(0,plotH);"
+"  for(var i=binLo;i<binHi;i++){ctx.lineTo(binX(i),dbY(d.mags_db[i]))}"
+"  ctx.lineTo(W,plotH);ctx.closePath();ctx.fill();"
 "  ctx.strokeStyle='#38bdf8';ctx.lineWidth=1.2;ctx.beginPath();"
-"  for(var j=0;j<n;j++){"
-"    var jx=j*W/(n-1),jy=dbY(d.mags_db[j]);"
-"    if(j===0)ctx.moveTo(jx,jy);else ctx.lineTo(jx,jy);"
+"  for(var j=binLo;j<binHi;j++){"
+"    var jx=binX(j),jy=dbY(d.mags_db[j]);"
+"    if(j===binLo)ctx.moveTo(jx,jy);else ctx.lineTo(jx,jy);"
 "  }"
 "  ctx.stroke();"
-/* Tune marker: triangle + dashed vertical line. Yellow=AFC, red=manual */
+/* Axis base line */
+"  ctx.strokeStyle='#334155';ctx.lineWidth=1;"
+"  ctx.beginPath();ctx.moveTo(0,plotH);ctx.lineTo(W,plotH);ctx.stroke();"
+/* Tune marker: triangle + dashed line. Yellow=AFC, red=manual. */
 "  if(d.fs>0){"
-"    var mx=(d.mixer_hz/(d.fs/2))*W;"
+"    var mx=hzX(d.mixer_hz);"
 "    var mkColor=d.afc?'#fbbf24':'#ef4444';"
 "    ctx.fillStyle=mkColor;"
-"    ctx.beginPath();ctx.moveTo(mx-5,0);ctx.lineTo(mx+5,0);ctx.lineTo(mx,8);ctx.closePath();ctx.fill();"
+"    ctx.beginPath();ctx.moveTo(mx-6,0);ctx.lineTo(mx+6,0);ctx.lineTo(mx,10);ctx.closePath();ctx.fill();"
 "    ctx.strokeStyle=mkColor;ctx.lineWidth=1;"
-"    ctx.setLineDash([3,3]);ctx.beginPath();"
-"    ctx.moveTo(mx,8);ctx.lineTo(mx,H);ctx.stroke();"
+"    ctx.setLineDash([3,4]);ctx.beginPath();"
+"    ctx.moveTo(mx,10);ctx.lineTo(mx,plotH);ctx.stroke();"
 "    ctx.setLineDash([]);"
 "  }"
-/* Readouts in the info strip */
+/* Info strip */
 "  var state=d.afc?'<span style=\"color:#fbbf24\">AFC</span>':'<span style=\"color:#ef4444\">Manual</span>';"
 "  var info='baud '+d.baud+'  Fs '+(d.fs/1000).toFixed(1)+' kHz  tune '+"
 "           d.mixer_hz.toFixed(0)+' Hz  ['+state+']';"
@@ -513,10 +547,10 @@ static const char HTML_PAGE[] =
 "document.addEventListener('DOMContentLoaded',function(){"
 "  var cv=document.getElementById('spec-canvas');if(!cv)return;"
 "  cv.addEventListener('click',function(ev){"
-"    var ch=currentSpecCh();if(ch===null||!specFs)return;"
+"    var ch=currentSpecCh();if(ch===null||specViewHi<=specViewLo)return;"
 "    var rect=cv.getBoundingClientRect();"
 "    var frac=(ev.clientX-rect.left)/rect.width;"
-"    var hz=frac*(specFs/2);"
+"    var hz=specViewLo+frac*(specViewHi-specViewLo);"
 "    fetch('/api/tune?ch='+ch+'&hz='+hz.toFixed(1))"
 "      .then(function(){pollSpectrum()}).catch(function(){});"
 "  });"
