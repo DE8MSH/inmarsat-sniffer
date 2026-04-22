@@ -377,7 +377,7 @@ static const char HTML_PAGE[] =
 "<div id=\"bar\">\n"
 "  <span class=\"title\">inmarsat-sniffer</span>\n"
 "  <span class=\"stat\">Locked <span id=\"n-ac\" class=\"val\">0</span></span>\n"
-"  <span class=\"stat\">ACARS <span id=\"n-acars\" class=\"val\">0</span></span>\n"
+"  <span class=\"stat\" title=\"Unique aircraft heard in the last 10 minutes (includes those without position reports)\">Aircraft (10m) <span id=\"n-aircraft\" class=\"val\">0</span></span>\n"
 "  <span class=\"stat\">Positions <span id=\"n-pos\" class=\"val\">0</span></span>\n"
 "  <span class=\"stat stdc-ui\">STD-C <span id=\"n-stdc\" class=\"val\">0</span></span>\n"
 "  <button id=\"btn-export\" onclick=\"exportAircraft()\" style=\"background:#334155;color:#e2e8f0;border:1px solid #475569;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;margin-left:4px\">Export CSV</button>\n"
