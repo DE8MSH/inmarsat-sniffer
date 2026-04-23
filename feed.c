@@ -153,9 +153,8 @@ static void send_json(const char *json, int len) {
         }
     }
 
-    /* UDP endpoints — MSG_DONTWAIT so a saturated kernel send buffer
-     * (routing blackhole, very bursty traffic) drops the packet rather
-     * than blocking whichever decoder thread called send_json. */
+    /* UDP endpoints — MSG_DONTWAIT so a saturated send buffer drops
+     * the packet rather than blocking the decoder thread. */
     for (int i = 0; i < udp_count; i++) {
         if (udp_sockets[i] >= 0) {
             sendto(udp_sockets[i], json, len, MSG_DONTWAIT,

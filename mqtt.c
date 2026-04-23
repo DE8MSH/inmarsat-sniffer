@@ -8,16 +8,51 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <mosquitto.h>
 
+#include "blocking_queue.h"
 #include "mqtt.h"
 
 static struct mosquitto *mosq = NULL;
 static char topic[256] = "inmarsat-sniffer/acars";
 static int connected = 0;
+
+/* Writer thread + bounded queue isolates mqtt_publish_json() from any
+ * brief contention on libmosquitto's internal mutex when the uplink
+ * is saturated. Drop-on-full, same pattern as feed.c stdout writer. */
+#define MQTT_QUEUE_CAPACITY 256
+typedef struct {
+    char *data;
+    int   len;
+} mqtt_msg_t;
+static Blocking_Queue mqtt_queue;
+static pthread_t      mqtt_writer_tid;
+static int            mqtt_writer_running = 0;
+static atomic_ulong   stat_mqtt_drops = 0;
+
+unsigned long mqtt_get_drops(void) {
+    return atomic_load(&stat_mqtt_drops);
+}
+
+static void *mqtt_writer_fn(void *arg) {
+    (void)arg;
+    for (;;) {
+        mqtt_msg_t *m = NULL;
+        int rc = blocking_queue_take(&mqtt_queue, &m);
+        if (rc == BQ_CLOSED) break;
+        if (rc != 0 || !m) continue;
+        if (mosq && connected && m->data && m->len > 0)
+            mosquitto_publish(mosq, NULL, topic, m->len, m->data, 0, false);
+        free(m->data);
+        free(m);
+    }
+    return NULL;
+}
 
 static void on_connect(struct mosquitto *m, void *user, int rc)
 {
@@ -74,18 +109,44 @@ int mqtt_init(const char *host, int port,
 
     mosquitto_loop_start(mosq);
 
+    if (blocking_queue_init(&mqtt_queue, MQTT_QUEUE_CAPACITY) == 0) {
+        if (pthread_create(&mqtt_writer_tid, NULL, mqtt_writer_fn, NULL) == 0)
+            mqtt_writer_running = 1;
+        else
+            blocking_queue_destroy(&mqtt_queue);
+    }
+
     fprintf(stderr, "MQTT: publishing to %s:%d topic=%s\n", host, port, topic);
     return 0;
 }
 
 void mqtt_publish_json(const char *json, int len)
 {
-    if (!mosq || !connected) return;
-    mosquitto_publish(mosq, NULL, topic, len, json, 0, false);
+    if (!mqtt_writer_running || len <= 0) return;
+    mqtt_msg_t *m = (mqtt_msg_t *)malloc(sizeof(*m));
+    char *copy = (char *)malloc(len);
+    if (!m || !copy) { free(m); free(copy); atomic_fetch_add(&stat_mqtt_drops, 1); return; }
+    memcpy(copy, json, len);
+    m->data = copy; m->len = len;
+    if (blocking_queue_add(&mqtt_queue, m) != 0) {
+        free(copy); free(m);
+        atomic_fetch_add(&stat_mqtt_drops, 1);
+    }
 }
 
 void mqtt_cleanup(void)
 {
+    if (mqtt_writer_running) {
+        blocking_queue_close(&mqtt_queue);
+        pthread_join(mqtt_writer_tid, NULL);
+        for (;;) {
+            mqtt_msg_t *m = NULL;
+            if (blocking_queue_poll(&mqtt_queue, &m) != 0 || !m) break;
+            free(m->data); free(m);
+        }
+        blocking_queue_destroy(&mqtt_queue);
+        mqtt_writer_running = 0;
+    }
     if (mosq) {
         mosquitto_disconnect(mosq);
         mosquitto_loop_stop(mosq, true);
