@@ -402,10 +402,12 @@ static int find_or_create_band(channelizer_t *ch, double freq,
 
     bd->channel_indices[bd->num_channels++] = channel_slot;
 
-    fprintf(stderr,
-            "Channelizer: new band %d  center=%.3f MHz  "
-            "s1_decim=%d  inter_rate=%.0f Hz\n",
-            bidx, freq / 1e6, s1_decim, bd->intermediate_rate);
+    extern int verbose;
+    if (verbose)
+        fprintf(stderr,
+                "Channelizer: new band %d  center=%.3f MHz  "
+                "s1_decim=%d  inter_rate=%.0f Hz\n",
+                bidx, freq / 1e6, s1_decim, bd->intermediate_rate);
 
     return bidx;
 }
@@ -509,11 +511,13 @@ int channelizer_add_channel(channelizer_t *ch, double freq,
     if (!c->out_buf) return -1;
     c->out_len = 0;
 
-    fprintf(stderr,
-            "Channelizer: ch%d  freq=%.3f MHz  type=%d  "
-            "band=%d  s1=%d  s2=%d  total=%d  out_rate=%.0f Hz\n",
-            channel_id, freq / 1e6, (int)type,
-            bidx, s1_decim, s2_decim, total_decim, stage_rate);
+    extern int verbose;
+    if (verbose)
+        fprintf(stderr,
+                "Channelizer: ch%d  freq=%.3f MHz  type=%d  "
+                "band=%d  s1=%d  s2=%d  total=%d  out_rate=%.0f Hz\n",
+                channel_id, freq / 1e6, (int)type,
+                bidx, s1_decim, s2_decim, total_decim, stage_rate);
 
     ch->num_channels++;
     return 0;
@@ -731,10 +735,12 @@ void channelizer_finalize(channelizer_t *ch) {
             cs->nco_current = 1.0f;
         }
 
-        fprintf(stderr,
-                "Channelizer: band %d NCO centered at %.3f MHz "
-                "(mix point only; channels remain at their spec frequencies %.3f-%.3f MHz)\n",
-                b, centroid / 1e6, freq_lo / 1e6, freq_hi / 1e6);
+        extern int verbose;
+        if (verbose)
+            fprintf(stderr,
+                    "Channelizer: band %d NCO centered at %.3f MHz "
+                    "(mix point only; channels remain at their spec frequencies %.3f-%.3f MHz)\n",
+                    b, centroid / 1e6, freq_lo / 1e6, freq_hi / 1e6);
     }
 }
 

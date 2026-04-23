@@ -1027,7 +1027,7 @@ static void channel_output_cb(int channel_id, channel_type_t type,
                     fprintf(stderr, "Auto-cal: carrier offset %.0f Hz on ch%d, adjusting center freq\n",
                             offset_hz, cal_ch);
                     channelizer_adjust_center(channelizer, offset_hz);
-                } else {
+                } else if (verbose) {
                     fprintf(stderr, "Auto-cal: centered (%.0f Hz), no adjustment\n", offset_hz);
                 }
                 cal_done = 1;
@@ -1074,8 +1074,9 @@ static void channel_output_cb(int channel_id, channel_type_t type,
                                                   on_cassign, NULL);
             }
 
-            fprintf(stderr, "[PMSK ch%d] baud=%d rate=%.0f (continuous P-channel)\n",
-                    channel_id, baud, output_rate);
+            if (verbose)
+                fprintf(stderr, "[PMSK ch%d] baud=%d rate=%.0f (continuous P-channel)\n",
+                        channel_id, baud, output_rate);
             if (jc->pmsk)
                 chan_init_thread(jc);
         }
@@ -1115,8 +1116,9 @@ static void channel_output_cb(int channel_id, channel_type_t type,
             if (jc->oqpsk_cont)
                 jaero_oqpsk_cont_set_acars_callback(jc->oqpsk_cont,
                                                      jaero_acars_data_cb, NULL);
-            fprintf(stderr, "[OQPSK-CONT ch%d] baud=10500 rate=%.0f (continuous)\n",
-                    channel_id, output_rate);
+            if (verbose)
+                fprintf(stderr, "[OQPSK-CONT ch%d] baud=10500 rate=%.0f (continuous)\n",
+                        channel_id, output_rate);
             if (jc->oqpsk_cont)
                 chan_init_thread(jc);
         }
@@ -1156,8 +1158,9 @@ static void channel_output_cb(int channel_id, channel_type_t type,
             if (jc->oqpsk_cont)
                 jaero_oqpsk_cont_set_acars_callback(jc->oqpsk_cont,
                                                      jaero_acars_data_cb, NULL);
-            fprintf(stderr, "[OQPSK-CONT ch%d] baud=8400 rate=%.0f (continuous)\n",
-                    channel_id, output_rate);
+            if (verbose)
+                fprintf(stderr, "[OQPSK-CONT ch%d] baud=8400 rate=%.0f (continuous)\n",
+                        channel_id, output_rate);
             if (jc->oqpsk_cont)
                 chan_init_thread(jc);
         }
@@ -1269,7 +1272,6 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Satellite: %s (%s, %+.1f%s)\n",
                 sat->name, sat->region,
                 fabs(sat->position), sat->position < 0 ? "W" : "E");
-        fprintf(stderr, "Channels: %d total\n", sat->num_channels);
 
         /* Pre-pass to check if aero+C span fits on the selected SDR.
          * Post PR #14, 4F3/3F5 have C-channels at ~1542.9 MHz — 3+ MHz below
@@ -1501,20 +1503,32 @@ int main(int argc, char **argv) {
             if (channelizer_add_channel(channelizer, cd->frequency,
                                          cd->type, cd->channel_id) == 0) {
                 added++;
-                if (verbose) {
-                    const char *type_name[] = {
-                        "STD-C EGC", "Aero 600", "Aero 1200",
-                        "Aero 10500", "Aero 8400"
-                    };
-                    fprintf(stderr, "  Channel %d: %s @ %.3f MHz\n",
-                            cd->channel_id, type_name[cd->type],
-                            cd->frequency / 1e6);
-                }
             }
         }
         long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
-        fprintf(stderr, "Channelizer: %d channels active (%ld CPU cores available)\n",
+        fprintf(stderr, "Active channels: %d (%ld CPU cores)\n",
                 added, ncpu > 0 ? ncpu : 1);
+        /* Per-channel summary — always on, short form */
+        for (int i = 0; i < sat->num_channels; i++) {
+            const channel_def_t *cd = &sat->channels[i];
+            double offset = fabs(cd->frequency - center_freq);
+            if (offset > samp_rate / 2.0) continue;
+            if (op_mode == MODE_AERO && cd->type == CHAN_STDC_EGC) continue;
+            if (op_mode == MODE_STDC && cd->type != CHAN_STDC_EGC) continue;
+            if (skip_c_channel && cd->type == CHAN_AERO_8400) continue;
+            const char *label;
+            int baud = 0;
+            switch (cd->type) {
+            case CHAN_STDC_EGC:   label = "STD-C EGC";  baud = 1200; break;
+            case CHAN_AERO_600:   label = "P-chan MSK"; baud = 600;  break;
+            case CHAN_AERO_1200:  label = "P-chan MSK"; baud = 1200; break;
+            case CHAN_AERO_10500: label = "Fwd OQPSK";  baud = 10500; break;
+            case CHAN_AERO_8400:  label = "C-chan OQPSK"; baud = 8400; break;
+            default:              label = "?";           break;
+            }
+            fprintf(stderr, "  ch%-3d  %-13s @ %.3f MHz  %5d baud\n",
+                    cd->channel_id, label, cd->frequency / 1e6, baud);
+        }
 
         /* Rebalance bands so no channel sits at DC (where offset/1/f noise hurt) */
         channelizer_finalize(channelizer);
