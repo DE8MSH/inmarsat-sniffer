@@ -233,9 +233,7 @@ static void *chan_worker_fn(void *arg)
             }
             jaero_pmsk_feed_iq(jc->pmsk, iq_dbl, take);
         } else if (jc->oqpsk_cont) {
-            /* Continuous OQPSK: feed IQ directly via feedIQ (same approach
-             * as MSK which works). feedIQ handles IQ→audio conversion
-             * internally matching JAERO's proven path. */
+            /* Continuous OQPSK: feedIQ wrapper does IQ→audio internally. */
             for (unsigned i = 0; i < take; i++) {
                 iq_dbl[i*2]   = crealf(batch[i]);
                 iq_dbl[i*2+1] = cimagf(batch[i]);
@@ -673,7 +671,7 @@ static void try_add_dynamic_channel(double freq_mhz) {
     if (freq_hz < INMARSAT_L_BAND_LOW || freq_hz > INMARSAT_L_BAND_HIGH)
         return;
 
-    /* Must be within our SDR bandwidth */
+    /* Must be within the active SDR bandwidth */
     double offset = fabs(freq_hz - center_freq);
     if (offset > samp_rate / 2.0)
         return;
@@ -742,19 +740,11 @@ static void stdc_bits_cb(const float *soft_bits, int num_bits, void *user) {
 }
 
 /* ---- Aero decode chain ----
- * AeroL (embedded from JAERO) owns the full Viterbi → descramble → RS → ISU
- * → ACARS chain. We receive validated ACARS userdata via jaero_acars_data_cb
- * below and route it through libacars + downstream feed/web. No native
- * aero_decoder — the earlier native path was removed once AeroL decoding
- * was confirmed end-to-end. */
+ * AeroL owns Viterbi → descramble → RS → ISU → ACARS validation.
+ * Validated ACARS userdata arrives in jaero_acars_data_cb below. */
 
-/* JAERO aerol ACARS callback: receives decoded ISU userdata from JAERO's
- * full decode chain (Viterbi → descramble → RS → ISU → ACARS validator).
- * acarsitem.valid was checked inside jaero_demod.cpp, so `data` is ACARS
- * userdata — pass through libacars for human-readable output. */
-/* Ground station channel assignment — aircraft requested a voice/data
- * session and got assigned a specific C-channel frequency pair. Types:
- *   0x31 = distress, 0x32 = flight safety, 0x33 = other safety, 0x34 = non-safety */
+/* C-channel assignment event: type bytes 0x31 distress, 0x32 safety,
+ * 0x33 other safety, 0x34 non-safety. */
 static void on_cassign(int channel_id, uint8_t type,
                         uint32_t aes_id, uint8_t ges_id,
                         double rx_mhz, double tx_mhz, void *user) {
@@ -778,8 +768,7 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
                                   void *user) {
     (void)user;
     atomic_fetch_add(&stat_aero_msgs, 1);
-    /* AeroL only calls us with acarsitem.valid == true, so every event
-     * here is a CRC-verified ACARS frame. Surface it in the counter. */
+    /* AeroL passes only valid frames — count every event as CRC-OK. */
     atomic_fetch_add(&stat_aero_crc_ok, 1);
 
     /* Per-channel stats */
@@ -791,8 +780,7 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
         }
     }
 
-    /* Verbose-only raw dump: hex + ASCII with MSB stripped (ACARS is
-     * 7-bit with odd parity; bytes above 0x7F are parity-inverted). */
+    /* Verbose-only raw dump: hex + 7-bit ASCII (ACARS parity-stripped). */
     if (verbose) {
         fprintf(stderr, "\n[JAERO-DECODED ch%d] %d bytes\n  hex: ", channel_id, len);
         for (int i = 0; i < len && i < 120; i++)
@@ -807,10 +795,8 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
     }
 
 #ifdef HAVE_LIBACARS
-    /* AeroL emits the ISU userdata which on aero P-channel is typically
-     *   FF FF  SOH  <mode> <reg 7> <ack> <label 2> <block> STX <text> ETX <crc2> DEL
-     * libacars wants the bytes AFTER SOH, so we scan forward to find the
-     * SOH (0x01) with MSB stripped and pass data+i+1 from there. */
+    /* ISU userdata framing: FF FF SOH <mode+hdr> STX <text> ETX <crc2> DEL.
+     * libacars expects the bytes after SOH (0x01) — scan forward, skip. */
     int soh_idx = -1;
     for (int i = 0; i < len - 12 && i < 6; i++) {
         if ((data[i] & 0x7F) == 0x01) { soh_idx = i; break; }
@@ -991,11 +977,8 @@ static void jaero_acars_data_cb(const uint8_t *data, int len,
 }
 
 
-/* JAERO demod callback: receives unsigned char soft bits (0-255, 128=zero).
- * AeroL (inside JAERO wrapper) handles the full decode chain — Viterbi,
- * descramble, RS FEC, ISU framing, ACARS extraction. We just count bursts
- * here for the status line. The old native aero_decoder path was fed raw
- * soft bits and produced garbage SOH/ETX matches; disabled now. */
+/* Soft-bits callback. AeroL inside the wrapper owns full decode; this
+ * just counts bursts for the status line. */
 static void jaero_bits_cb(const unsigned char *bits, int num_bits,
                             int channel_id, void *user) {
     (void)user; (void)bits; (void)num_bits; (void)channel_id;
@@ -1044,9 +1027,7 @@ static void channel_output_cb(int channel_id, channel_type_t type,
 #ifdef HAVE_ZMQ
     if (zmq_enabled) {
         double output_rate = channelizer_output_rate(channelizer, channel_id);
-        /* Per-baud JAERO default audio center: 1000 Hz for MSK, 8000 Hz for OQPSK.
-         * This makes our ZMQ output match what JAERO expects by default for each
-         * modulation type (matches SDRReceiver-to-JAERO wiring conventions). */
+        /* Audio centers match JAERO/SDRReceiver defaults: 1 kHz MSK, 8 kHz OQPSK. */
         double audio_center = (type == CHAN_AERO_10500 ||
                                 type == CHAN_AERO_8400) ? 8000.0 : 1000.0;
         if (output_rate > 0)
@@ -1059,10 +1040,7 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         return;
     }
 
-    /* Auto-calibrate: measure carrier offset from first aero channel,
-     * then adjust channelizer center freq to compensate SDR PPM error.
-     * Runs once at startup only — periodic recal was causing drift on
-     * SDRs with stable oscillators (SDRplay). */
+    /* Startup-only PPM auto-cal from the first aero channel's carrier. */
     {
         static float complex cal_buf[1024];
         static int cal_n = 0;
@@ -1110,9 +1088,7 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         }
     }
 
-    /* Aero MSK channels: use JAERO's BurstMskDemodulator + AeroL in P-channel
-     * continuous mode. Feed complex IQ directly via feedIQ (no audio
-     * round-trip conversion). */
+    /* Aero MSK (600/1200 baud P-channel): JAERO MskDemodulator + AeroL, feedIQ path. */
     if (type == CHAN_AERO_600 || type == CHAN_AERO_1200) {
 
         int baud = (type == CHAN_AERO_1200) ? 1200 : 600;
@@ -1138,7 +1114,6 @@ static void channel_output_cb(int channel_id, channel_type_t type,
              * 600/1200 baud MSK. Matches SDRReceiver/ZMQ convention. */
             jc->mixer_inc = 2.0 * M_PI * PMSK_AUDIO_HZ / output_rate;
 
-            /* JAERO's continuous MskDemodulator + AeroL (P-channel mode) */
             jc->pmsk = jaero_pmsk_create(output_rate, (double)baud,
                                           channel_id, jaero_bits_cb, NULL);
             if (jc->pmsk) {
@@ -1156,13 +1131,11 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         }
         if (!jc || !jc->pmsk) return;
 
-        /* Push into per-channel ring — worker thread feeds the demod. */
         chan_push(jc, samples, num_samples);
         return;
     }
 
-    /* Aero 10500 baud: continuous OQPSK forward link (Aero H/H+/L).
-     * Uses OqpskDemodulator (continuous, AeroL burstmode=false). */
+    /* Aero 10500 baud OQPSK forward link: continuous OqpskDemodulator + AeroL. */
     if (type == CHAN_AERO_10500) {
         double output_rate = channelizer_output_rate(channelizer, channel_id);
         if (output_rate <= 0) return;
@@ -1201,8 +1174,7 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         return;
     }
 
-    /* Aero 8400 baud: burst OQPSK (C-channel voice/data).
-     * Keeps BurstOqpskDemodulator unchanged. */
+    /* Aero 8400 baud OQPSK C-channel (voice/data). */
     if (type == CHAN_AERO_8400) {
         double output_rate = channelizer_output_rate(channelizer, channel_id);
         if (output_rate <= 0) return;
@@ -1223,8 +1195,6 @@ static void channel_output_cb(int channel_id, channel_type_t type,
             jc->mixer_phase = 0.0;
             jc->mixer_inc   = 2.0 * M_PI * AUDIO_CENTER_HZ / output_rate;
 
-            /* JAERO only has "8400" mode (no burst variant) — use
-             * continuous OqpskDemodulator, same as 10500. */
             jc->oqpsk_cont = jaero_oqpsk_cont_create(output_rate, 8400.0,
                                                        channel_id, jaero_bits_cb, NULL);
             if (jc->oqpsk_cont)
@@ -1345,11 +1315,8 @@ int main(int argc, char **argv) {
                 sat->name, sat->region,
                 fabs(sat->position), sat->position < 0 ? "W" : "E");
 
-        /* Pre-pass to check if aero+C span fits on the selected SDR.
-         * Post PR #14, 4F3/3F5 have C-channels at ~1542.9 MHz — 3+ MHz below
-         * the aero cluster — so full aero-with-C span exceeds RTL-SDR's
-         * usable max of 2.88 MHz. Auto-enable --skip-c-channel in that case
-         * with a clear warning. */
+        /* Aero+C span on 4F3/3F5 exceeds RTL-SDR's ~2.88 MHz usable BW
+         * because C-channels sit ~3 MHz below the aero cluster. Skip them. */
 #ifdef HAVE_RTLSDR
         if (rtl_dev_index >= 0 && !skip_c_channel && samp_rate == 0 &&
             op_mode != MODE_STDC) {
@@ -1374,8 +1341,7 @@ int main(int argc, char **argv) {
         }
 #endif
 
-        /* Auto-compute center frequency and sample rate from the channels
-         * that will actually be decoded (filtered by --mode + --skip-c-channel). */
+        /* Auto center/rate from the channels that will actually decode. */
         double lo = 1e12, hi = 0;
         for (int i = 0; i < sat->num_channels; i++) {
             const channel_def_t *cd = &sat->channels[i];
@@ -1397,7 +1363,7 @@ int main(int argc, char **argv) {
 
             /* Prefer the known-good (satellite, SDR) rate from
              * SDRReceiver configs or live testing — set on satellite_t when
-             * we have authoritative data. Falls back to max(span*1.2, floor). */
+             * authoritative data exists. Falls back to max(span*1.2, floor). */
             double preferred = 0;
 #ifdef HAVE_RTLSDR
             if (rtl_dev_index >= 0) preferred = sat->preferred_rate_rtl;
@@ -1605,7 +1571,7 @@ int main(int argc, char **argv) {
         /* Rebalance bands so no channel sits at DC (where offset/1/f noise hurt) */
         channelizer_finalize(channelizer);
 
-        /* Initialize STD-C demod/decode chain if we have an EGC channel */
+        /* STD-C demod/decode chain if an EGC channel is active */
         for (int i = 0; i < sat->num_channels; i++) {
             if (sat->channels[i].type == CHAN_STDC_EGC &&
                 (op_mode != MODE_AERO)) {
@@ -1620,7 +1586,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        /* Initialize Aero decoder if we have any Aero channels */
+        /* Aero decoder if any Aero channel is active */
         if (op_mode != MODE_STDC) {
             int have_aero = 0;
             for (int i = 0; i < sat->num_channels; i++) {
@@ -1715,7 +1681,7 @@ int main(int argc, char **argv) {
      * bits through the callback, which needs the decoder still alive. */
     dbpsk_demod_destroy(stdc_demod);
     /* Stop all per-channel worker threads first so the ring is quiesced
-     * before we free the demods they're feeding. */
+     * before freeing the demods they're feeding. */
     for (int i = 0; i < num_jaero_chans; i++) {
         if (jaero_chans[i].ring) {
             atomic_store(&jaero_chans[i].thread_run, 0);
