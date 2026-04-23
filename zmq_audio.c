@@ -127,8 +127,10 @@ static zmq_chan_t *get_channel(int channel_id, double samp_rate,
     /* Empirical gain to match SDRReceiver's int16 audio level into JAERO. */
     ch->gain = (audio_center_hz >= 4000.0) ? 3.0 : 5.0;
     snprintf(ch->topic, sizeof(ch->topic), "VFO%02d", channel_id);
-    fprintf(stderr, "ZMQ: channel %d topic=%s audio_center=%.0f Hz gain=%.3f\n",
-            channel_id, ch->topic, audio_center_hz, ch->gain);
+    extern int verbose;
+    if (verbose)
+        fprintf(stderr, "ZMQ: channel %d topic=%s audio_center=%.0f Hz gain=%.3f\n",
+                channel_id, ch->topic, audio_center_hz, ch->gain);
     return ch;
 }
 
