@@ -8,8 +8,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __SIMD_KERNELS_H__
-#define __SIMD_KERNELS_H__
+#ifndef SIMD_KERNELS_H
+#define SIMD_KERNELS_H
 
 #include <complex.h>
 #include <stddef.h>
@@ -217,4 +217,4 @@ void avx2_csquare_window(const float complex *in, const float *window,
 
 #endif /* x86 */
 
-#endif /* __SIMD_KERNELS_H__ */
+#endif /* SIMD_KERNELS_H */

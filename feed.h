@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __FEED_H__
-#define __FEED_H__
+#ifndef FEED_H
+#define FEED_H
 
 #include "stdc_decode.h"
 #include "aero_decode.h"

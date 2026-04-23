@@ -8,8 +8,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __CHANNELIZER_H__
-#define __CHANNELIZER_H__
+#ifndef CHANNELIZER_H
+#define CHANNELIZER_H
 
 #include <stdint.h>
 #include <complex.h>

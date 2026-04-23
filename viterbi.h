@@ -9,8 +9,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __VITERBI_H__
-#define __VITERBI_H__
+#ifndef VITERBI_H
+#define VITERBI_H
 
 #include <stdint.h>
 

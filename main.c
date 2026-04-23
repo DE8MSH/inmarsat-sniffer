@@ -284,6 +284,11 @@ static void chan_push(jaero_chan_t *jc, const float complex *samples, int n)
 static void chan_init_thread(jaero_chan_t *jc)
 {
     jc->ring = (float complex *)malloc(CHAN_RING_SIZE * sizeof(float complex));
+    if (!jc->ring) {
+        fprintf(stderr, "chan_init_thread: OOM allocating ring for ch%d\n",
+                jc->channel_id);
+        return;
+    }
     atomic_init(&jc->ring_head, 0);
     atomic_init(&jc->ring_tail, 0);
     atomic_init(&jc->drops, 0);
@@ -512,20 +517,23 @@ static void *spewer_thread(void *arg) {
     size_t block = 32768;
 
     while (running) {
-        sample_buf_t *s;
-        size_t r;
+        sample_buf_t *s = NULL;
+        size_t r = 0;
 
         switch (iq_format) {
         case FMT_CI8:
             s = malloc(sizeof(*s) + block * 2);
+            if (!s) break;
             s->format = SAMPLE_FMT_INT8;
             r = fread(s->samples, 2, block, f);
             break;
 
         case FMT_CU8: {
             s = malloc(sizeof(*s) + block * 2);
+            if (!s) break;
             s->format = SAMPLE_FMT_INT8;
             uint8_t *tmp = malloc(block * 2);
+            if (!tmp) { free(s); s = NULL; break; }
             r = fread(tmp, 2, block, f);
             for (size_t i = 0; i < r * 2; i++)
                 s->samples[i] = (int8_t)(tmp[i] - 128);
@@ -535,8 +543,10 @@ static void *spewer_thread(void *arg) {
 
         case FMT_CI16: {
             s = malloc(sizeof(*s) + block * 2);
+            if (!s) break;
             s->format = SAMPLE_FMT_INT8;
             int16_t *tmp = malloc(block * 4);
+            if (!tmp) { free(s); s = NULL; break; }
             r = fread(tmp, 4, block, f);
             for (size_t i = 0; i < r * 2; i++)
                 s->samples[i] = (int8_t)(tmp[i] >> 8);
@@ -546,18 +556,17 @@ static void *spewer_thread(void *arg) {
 
         case FMT_CF32: {
             s = malloc(sizeof(*s) + block * 8);
+            if (!s) break;
             s->format = SAMPLE_FMT_FLOAT;
             r = fread(s->samples, 8, block, f);
             break;
         }
 
         default:
-            s = malloc(sizeof(*s));
-            s->format = SAMPLE_FMT_INT8;
-            r = 0;
             break;
         }
 
+        if (!s) break;         /* OOM — bail out */
         if (r == 0) {
             free(s);
             break;

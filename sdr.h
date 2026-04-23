@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __SDR_H__
-#define __SDR_H__
+#ifndef SDR_H
+#define SDR_H
 
 #include <stdint.h>
 

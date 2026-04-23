@@ -4,8 +4,8 @@
  * Copyright (c) 2026 CEMAXECUTER LLC
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-#ifndef __INMARSAT_HACKRF_H__
-#define __INMARSAT_HACKRF_H__
+#ifndef INMARSAT_HACKRF_H
+#define INMARSAT_HACKRF_H
 
 void hackrf_backend_list(void);
 void *hackrf_backend_setup(const char *serial);

@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __SATELLITES_H__
-#define __SATELLITES_H__
+#ifndef SATELLITES_H
+#define SATELLITES_H
 
 #include "inmarsat.h"
 

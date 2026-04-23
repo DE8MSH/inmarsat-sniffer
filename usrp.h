@@ -4,8 +4,8 @@
  * Copyright (c) 2026 CEMAXECUTER LLC
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-#ifndef __INMARSAT_USRP_H__
-#define __INMARSAT_USRP_H__
+#ifndef INMARSAT_USRP_H
+#define INMARSAT_USRP_H
 
 void usrp_backend_list(void);
 void *usrp_backend_setup(const char *serial);

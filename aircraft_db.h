@@ -8,8 +8,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __AIRCRAFT_DB_H__
-#define __AIRCRAFT_DB_H__
+#ifndef AIRCRAFT_DB_H
+#define AIRCRAFT_DB_H
 
 #include <stdint.h>
 

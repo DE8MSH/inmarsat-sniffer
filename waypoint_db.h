@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __WAYPOINT_DB_H__
-#define __WAYPOINT_DB_H__
+#ifndef WAYPOINT_DB_H
+#define WAYPOINT_DB_H
 
 /*
  * Load waypoint database from CSV (IDENT,LAT,LON format).

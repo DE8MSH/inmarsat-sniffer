@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __SDRPLAY_H__
-#define __SDRPLAY_H__
+#ifndef SDRPLAY_H
+#define SDRPLAY_H
 
 void sdrplay_list(void);
 void *sdrplay_setup(const char *serial);

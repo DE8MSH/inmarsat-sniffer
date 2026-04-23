@@ -8,8 +8,8 @@
  * Copyright (c) 2026 CEMAXECUTER LLC
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-#ifndef __ACARS_POSITION_H__
-#define __ACARS_POSITION_H__
+#ifndef ACARS_POSITION_H
+#define ACARS_POSITION_H
 
 /*
  * Attempt to extract the aircraft's current position from an ACARS

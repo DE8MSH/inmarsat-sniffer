@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __VITA49_H__
-#define __VITA49_H__
+#ifndef VITA49_H
+#define VITA49_H
 
 void *vita49_thread(void *arg);
 

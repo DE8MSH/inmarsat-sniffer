@@ -7,8 +7,8 @@
  * Copyright (c) 2026 CEMAXECUTER LLC
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-#ifndef __INMARSAT_MQTT_H__
-#define __INMARSAT_MQTT_H__
+#ifndef INMARSAT_MQTT_H
+#define INMARSAT_MQTT_H
 
 int mqtt_init(const char *host, int port,
               const char *user, const char *pass,

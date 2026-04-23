@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __WEB_H__
-#define __WEB_H__
+#ifndef WEB_H
+#define WEB_H
 
 #include "stdc_decode.h"
 #include "aero_decode.h"

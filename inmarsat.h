@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __INMARSAT_H__
-#define __INMARSAT_H__
+#ifndef INMARSAT_H
+#define INMARSAT_H
 
 /* L-band downlink range */
 #define INMARSAT_L_BAND_LOW    1525000000.0

@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __NET_UTIL_H__
-#define __NET_UTIL_H__
+#ifndef NET_UTIL_H
+#define NET_UTIL_H
 
 #include <arpa/inet.h>
 #include <netdb.h>

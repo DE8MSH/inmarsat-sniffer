@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __RTLSDR_H__
-#define __RTLSDR_H__
+#ifndef RTLSDR_H
+#define RTLSDR_H
 
 void rtlsdr_backend_list(void);
 void *rtlsdr_backend_setup(int dev_index);

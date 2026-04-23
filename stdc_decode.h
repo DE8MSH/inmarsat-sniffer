@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __STDC_DECODE_H__
-#define __STDC_DECODE_H__
+#ifndef STDC_DECODE_H
+#define STDC_DECODE_H
 
 #include <stdint.h>
 

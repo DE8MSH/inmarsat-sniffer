@@ -8,8 +8,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __BASESTATION_H__
-#define __BASESTATION_H__
+#ifndef BASESTATION_H
+#define BASESTATION_H
 
 #include <stdint.h>
 

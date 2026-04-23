@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __ZMQ_AUDIO_H__
-#define __ZMQ_AUDIO_H__
+#ifndef ZMQ_AUDIO_H
+#define ZMQ_AUDIO_H
 
 #include <complex.h>
 

@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __SOAPYSDR_H__
-#define __SOAPYSDR_H__
+#ifndef SOAPYSDR_H
+#define SOAPYSDR_H
 
 #include <SoapySDR/Device.h>
 

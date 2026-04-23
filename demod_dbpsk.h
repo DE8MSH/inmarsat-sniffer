@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __DEMOD_DBPSK_H__
-#define __DEMOD_DBPSK_H__
+#ifndef DEMOD_DBPSK_H
+#define DEMOD_DBPSK_H
 
 #include <complex.h>
 #include <stdint.h>

@@ -13,8 +13,8 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __LEARNED_WAYPOINTS_H__
-#define __LEARNED_WAYPOINTS_H__
+#ifndef LEARNED_WAYPOINTS_H
+#define LEARNED_WAYPOINTS_H
 
 /*
  * Parse an FPN (Flight Plan) message body for WAYPOINT,COORD pairs and
