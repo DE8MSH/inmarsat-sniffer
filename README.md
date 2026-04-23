@@ -2,7 +2,7 @@
 
 A standalone Inmarsat L-band decoder written in C. Decodes STD-C (Enhanced Group Call maritime safety messages) and Aero (aviation ACARS, ADS-C, CPDLC) simultaneously from a single SDR receiver. No GNU Radio, no Python, no Java runtime -- just one binary.
 
-Supports HackRF, BladeRF, USRP (UHD), RTL-SDR, SDRplay (native API v3), and any SoapySDR device for live capture, plus VITA 49 (VRT) UDP input and IQ file playback. Built-in web dashboard (`--web`) provides a real-time Leaflet.js map with aircraft positions and decoded messages. Outputs include JSON feed (`--feed`, `--udp`), SBS/BaseStation (`--basestation`) for tar1090/VRS, and MQTT (`--mqtt`) -- all with JAERO-compatible field names for drop-in integration with existing tools.
+Supports HackRF, BladeRF, USRP (UHD), RTL-SDR, SDRplay (native API v3), Airspy R2/Mini, and any SoapySDR device for live capture, plus VITA 49 (VRT) UDP input and IQ file playback. Built-in web dashboard (`--web`) provides a real-time Leaflet.js map with aircraft positions and decoded messages. Outputs include JSON feed (`--feed`, `--udp`), SBS/BaseStation (`--basestation`) for tar1090/VRS, and MQTT (`--mqtt`) -- all with JAERO-compatible field names for drop-in integration with existing tools.
 
 The Aero decode chain uses JAERO's proven DSP code (MskDemodulator, OqpskDemodulator, plus BurstMskDemodulator / BurstOqpskDemodulator for future burst-channel work) ported from [jontio/JAERO](https://github.com/jontio/JAERO), Qt-stripped to pure C++. When [libacars-2](https://github.com/szpajder/libacars) is installed, ARINC-622 application payloads (ADS-C position reports, CPDLC controller-pilot messages) are fully decoded and reassembled.
 
@@ -25,6 +25,8 @@ Sister project to [iridium-sniffer](https://github.com/alphafox02/iridium-sniffe
 - JAERO text format 3 output (`--jaero-format=HOST:PORT`) via UDP for legacy script compatibility
 - AES/GES identifiers from ISU layer in all outputs
 - Built-in web dashboard with dark theme, aircraft markers, signal quality bars, trail history, CSV export, and per-channel lock indicator driven by demod signal status (not just message recency)
+- Optional Spectrum tab (`--spectrum`) with scrolling waterfall, I/Q constellation, and click-to-tune per channel; runs only while the tab is open
+- Non-blocking I/O on every decode-path sink (stdout JSON, stderr, UDP, ZMQ, MQTT) so a stalled downstream consumer drops messages instead of freezing decode
 - Two-stage channelizer with per-channel digital gain
 - 125-tap Hilbert USB demod on both internal decode and ZMQ output paths (matches SDRReceiver's `vfo::usb_demod()` math; inner loop optimised from 125 to 31 multiplies via antisymmetric zero-tap pairing)
 - Startup auto-calibration for SDR crystal offset (measures carrier error on first active channel, adjusts center freq)
@@ -34,7 +36,7 @@ Sister project to [iridium-sniffer](https://github.com/alphafox02/iridium-sniffe
 - RTL-SDR AGC mode (`--agc`) for weak signal setups
 - ZMQ audio output (`--zmq`) for JAERO-compatible per-channel streaming (same USB-demod audio SDRReceiver produces)
 - VITA 49 (VRT) UDP input for remote/distributed SDR setups
-- HackRF, BladeRF, USRP, RTL-SDR, SDRplay, and SoapySDR native backends
+- HackRF, BladeRF, USRP, RTL-SDR, SDRplay, Airspy R2/Mini, and SoapySDR native backends
 - MacOS (Homebrew) build support on Intel and Apple Silicon
 
 ## What it decodes
@@ -78,6 +80,7 @@ sudo apt install libhackrf-dev       # HackRF One
 sudo apt install libbladerf-dev      # BladeRF
 sudo apt install libuhd-dev          # USRP (B2x0, N2x0, etc.)
 sudo apt install libsoapysdr-dev     # SoapySDR (any device)
+sudo apt install libairspy-dev       # Airspy R2 / Mini
 # SDRplay native API: install from https://www.sdrplay.com/api/
 
 # Optional: ACARS ARINC-622/ADS-C/CPDLC — libacars-2 is NOT packaged on
@@ -103,7 +106,7 @@ make -j$(nproc)
 ### macOS (Homebrew)
 
 ```bash
-brew install cmake librtlsdr hackrf libbladerf uhd soapysdr mosquitto zmq
+brew install cmake librtlsdr hackrf libbladerf uhd soapysdr mosquitto zmq airspy
 
 # libacars isn't in Homebrew — build from source:
 git clone https://github.com/szpajder/libacars.git /tmp/libacars
@@ -129,6 +132,7 @@ Install the SDRplay API v3 from [sdrplay.com](https://www.sdrplay.com/api/) firs
 -- HackRF: enabled
 -- BladeRF: enabled
 -- USRP (UHD): enabled
+-- Airspy: enabled
 -- SIMD: SSE4.2 + AVX2+FMA kernels enabled (runtime-detected)
 -- MQTT: enabled
 -- ZMQ: enabled
@@ -146,7 +150,8 @@ Native backends (no SoapySDR needed):
 | `-i bladerf0` | BladeRF x40/xA4/micro | Up to 56 MHz BW |
 | `-i usrp-PRODUCT-SERIAL` | Ettus USRP | B205mini, B210, N210, X310 |
 | `-i sdrplay[-SERIAL]` | SDRplay RSP family | RSPdx recommended, 10 MHz BW, bias tee |
-| `-i soapy-N` or `soapy:args` | Any SoapySDR device | Airspy, LimeSDR, PlutoSDR, etc. |
+| `-i airspy[-HEXSN]` | Airspy R2 / Mini | 12-bit ADC, fixed 2.5/10 MSPS rates auto-selected |
+| `-i soapy-N` or `soapy:args` | Any SoapySDR device | LimeSDR, PlutoSDR, etc. |
 | `--vita49[=IP:PORT]` | VITA 49 (VRT) UDP | Remote SDR via network |
 
 You need an antenna covering 1525-1559 MHz. A modified GPS patch, small helix, or L-band patch works. Point at the satellite -- Inmarsat birds are geostationary.
@@ -175,6 +180,17 @@ inmarsat-sniffer -i rtl-0 --satellite=4F3 --mode=aero --skip-c-channel
 inmarsat-sniffer -i sdrplay --satellite=4F3 --web --basestation=30003
 # Web map: http://localhost:8888
 # SBS feed: connect tar1090/VRS to localhost:30003
+```
+
+### Spectrum tab (waterfall + constellation + click-to-tune)
+
+Opt-in via `--spectrum` (implies `--web`). Adds a Spectrum tab to the
+dashboard with a scrolling waterfall per channel, an I/Q constellation
+scatter, and click-to-tune that disables AFC so the manual frequency
+holds. Not enabled by default — runs FFTs only while the tab is open.
+
+```bash
+inmarsat-sniffer -i sdrplay --satellite=4F3 --spectrum
 ```
 
 ### Push SBS to a remote aggregator
