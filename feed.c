@@ -153,10 +153,12 @@ static void send_json(const char *json, int len) {
         }
     }
 
-    /* UDP endpoints */
+    /* UDP endpoints — MSG_DONTWAIT so a saturated kernel send buffer
+     * (routing blackhole, very bursty traffic) drops the packet rather
+     * than blocking whichever decoder thread called send_json. */
     for (int i = 0; i < udp_count; i++) {
         if (udp_sockets[i] >= 0) {
-            sendto(udp_sockets[i], json, len, 0,
+            sendto(udp_sockets[i], json, len, MSG_DONTWAIT,
                    (struct sockaddr *)&udp_addrs[i],
                    sizeof(udp_addrs[i]));
         }
@@ -453,9 +455,9 @@ void feed_aero_message(const aero_message_t *msg) {
         jbuf[jpos++] = '\n';
         jbuf[jpos] = '\0';
 
-        /* Send over UDP if configured */
+        /* Send over UDP if configured (non-blocking — see note above) */
         if (jaero_udp_sock >= 0) {
-            sendto(jaero_udp_sock, jbuf, jpos, 0,
+            sendto(jaero_udp_sock, jbuf, jpos, MSG_DONTWAIT,
                    (struct sockaddr *)&jaero_udp_addr, sizeof(jaero_udp_addr));
         } else {
             /* Fall back to stderr if no UDP endpoint */

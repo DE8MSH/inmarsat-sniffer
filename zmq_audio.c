@@ -207,11 +207,16 @@ void zmq_audio_send(int channel_id, const float complex *samples,
         pcm[i] = (int16_t)scaled;
     }
 
-    /* Send: [topic] [rate] [samples] — matches SDRReceiver's ZmqPublisher */
+    /* Send: [topic] [rate] [samples] — matches SDRReceiver's ZmqPublisher.
+     * ZMQ_DONTWAIT on all three: PUB sockets drop silently on HWM
+     * anyway, but DONTWAIT also guarantees we never block on internal
+     * queue handoff during subscriber churn. Runs on the main
+     * channelizer thread for every buffer on every active channel, so
+     * any hitch here stalls the whole decode. */
     uint32_t rate = (uint32_t)samp_rate;
-    zmq_send(ch->socket, ch->topic, strlen(ch->topic), ZMQ_SNDMORE);
-    zmq_send(ch->socket, &rate, sizeof(rate), ZMQ_SNDMORE);
-    zmq_send(ch->socket, pcm, num_samples * sizeof(int16_t), 0);
+    zmq_send(ch->socket, ch->topic, strlen(ch->topic), ZMQ_SNDMORE | ZMQ_DONTWAIT);
+    zmq_send(ch->socket, &rate, sizeof(rate), ZMQ_SNDMORE | ZMQ_DONTWAIT);
+    zmq_send(ch->socket, pcm, num_samples * sizeof(int16_t), ZMQ_DONTWAIT);
 
     free(pcm);
 }
