@@ -7,6 +7,7 @@
 
 #include <err.h>
 #include <getopt.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,7 +123,8 @@ static void usage(int exitcode) {
 "SDR options:\n"
 "    -i, --interface=IFACE   SDR to use (see --list for available devices):\n"
 "                             rtl-N, soapy-N, soapy:driver=X, sdrplay[-SERIAL],\n"
-"                             hackrf[-SERIAL], bladerfN, usrp-PRODUCT-SERIAL\n"
+"                             hackrf[-SERIAL], bladerfN, usrp-PRODUCT-SERIAL,\n"
+"                             airspy[-HEXSN]\n"
 "    -r, --sample-rate=HZ    sample rate in Hz (default: auto from satellite)\n"
 "    -B, --bias-tee          enable bias tee power\n"
 "    -p, --ppm=N.NN          SDR frequency error in PPM. RTL-SDR tunes its\n"
@@ -202,6 +204,12 @@ static void list_interfaces(void) {
     {
         extern void usrp_backend_list(void);
         usrp_backend_list();
+    }
+#endif
+#ifdef HAVE_AIRSPY
+    {
+        extern void airspy_backend_list(void);
+        airspy_backend_list();
     }
 #endif
 #ifdef HAVE_SDRPLAY
@@ -345,6 +353,19 @@ void parse_options(int argc, char **argv) {
                 break;
             }
 #endif
+#ifdef HAVE_AIRSPY
+            if (strncmp(optarg, "airspy-", 7) == 0) {
+                extern uint64_t airspy_serial;
+                extern int airspy_selected;
+                airspy_serial = strtoull(optarg + 7, NULL, 16);
+                airspy_selected = 1;
+                break;
+            } else if (strcmp(optarg, "airspy") == 0) {
+                extern int airspy_selected;
+                airspy_selected = 1;
+                break;
+            }
+#endif
 #ifdef HAVE_SDRPLAY
             if (strncmp(optarg, "sdrplay-", 8) == 0) {
                 sdrplay_serial = strdup(optarg + 8);
@@ -360,7 +381,7 @@ void parse_options(int argc, char **argv) {
             } else if (strncmp(optarg, "soapy-", 6) == 0) {
                 soapy_num = atoi(optarg + 6);
             } else {
-                errx(1, "Unknown interface: %s (use rtl-N, hackrf[-SERIAL], bladerfN, usrp-PRODUCT-SERIAL, soapy-N, soapy:args, or sdrplay[-SERIAL])", optarg);
+                errx(1, "Unknown interface: %s (use rtl-N, hackrf[-SERIAL], bladerfN, usrp-PRODUCT-SERIAL, airspy[-HEXSN], soapy-N, soapy:args, or sdrplay[-SERIAL])", optarg);
             }
 #else
 #ifndef HAVE_SDRPLAY

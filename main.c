@@ -310,6 +310,10 @@ static void chan_init_thread(jaero_chan_t *jc)
 #include "usrp.h"
 #endif
 
+#ifdef HAVE_AIRSPY
+#include "airspy.h"
+#endif
+
 #include "sdr.h"
 #include "inmarsat.h"
 #include "satellites.h"
@@ -421,6 +425,10 @@ int sdrplay_gain_val = -1;  /* -1 = AGC enabled */
 #endif
 #ifdef HAVE_RTLSDR
 int rtl_dev_index = -1;
+#endif
+#ifdef HAVE_AIRSPY
+uint64_t airspy_serial = 0;  /* 0 = first device */
+int airspy_selected = 0;     /* set when -i airspy[-SN] is passed */
 #endif
 #ifdef HAVE_HACKRF
 char *hackrf_serial = NULL;
@@ -1486,6 +1494,12 @@ int main(int argc, char **argv) {
         if (usrp_serial) {
             void *dev = usrp_backend_setup(usrp_serial);
             pthread_create(&input_tid, NULL, usrp_stream_thread, dev);
+        } else
+#endif
+#ifdef HAVE_AIRSPY
+        if (airspy_selected) {
+            void *dev = airspy_backend_setup(airspy_serial);
+            pthread_create(&input_tid, NULL, airspy_stream_thread, dev);
         } else
 #endif
 #ifdef HAVE_SDRPLAY
