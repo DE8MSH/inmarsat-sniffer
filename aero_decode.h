@@ -1,61 +1,37 @@
 /*
- * Aero frame parser and ACARS message extraction
+ * Aero ACARS decoded-message struct
  *
  * Copyright (c) 2026 CEMAXECUTER LLC
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
-#ifndef __AERO_DECODE_H__
-#define __AERO_DECODE_H__
+#ifndef AERO_DECODE_H
+#define AERO_DECODE_H
 
 #include <stdint.h>
 
-/* Decoded Aero ACARS message */
 typedef struct {
-    char reg[16];           /* aircraft registration */
-    char flight[16];        /* flight number */
-    char label[4];          /* ACARS label (2 chars) */
-    char mode;              /* ACARS mode character */
-    char block_id;          /* block identifier */
-    char ack;               /* acknowledgement character */
-    double lat, lon;        /* position (NaN if unknown) */
-    int alt_ft;             /* altitude in feet (-1 if unknown) */
+    char reg[16];
+    char flight[16];
+    char label[4];
+    char mode;
+    char block_id;
+    char ack;
+    double lat, lon;
+    int alt_ft;
     int has_position;
-    char text[4096];        /* message text */
+    char text[4096];
     int text_len;
     int channel_id;
     uint64_t timestamp;
-    uint32_t aes_id;        /* AES (aircraft) ID from ISU header */
-    uint8_t ges_id;         /* GES (ground station) ID from ISU header */
-    uint8_t qno;            /* Q-number from ISU header */
-    uint8_t refno;          /* reference number from ISU header */
-    int downlink;           /* 1 = aircraft->ground, 0 = ground->aircraft */
-    /* libacars proto tree serialised as JSON (for JSONdump "arinc622"
-     * field). NULL if libacars found nothing useful. Memory owned by
-     * caller, must remain valid for the duration of the callback. */
-    const char *arinc622_json;
-    /* Raw ACARS frame for libacars parsing */
+    uint32_t aes_id;
+    uint8_t ges_id;
+    uint8_t qno;
+    uint8_t refno;
+    int downlink;              /* 1 = aircraft->ground, 0 = ground->aircraft */
+    const char *arinc622_json; /* libacars proto-tree JSON, or NULL */
     const uint8_t *raw_data;
     int raw_len;
 } aero_message_t;
-
-/* Callback for decoded Aero messages */
-typedef void (*aero_msg_cb_t)(const aero_message_t *msg, void *user);
-
-/* Aero decoder state */
-typedef struct aero_decoder aero_decoder_t;
-
-/* Create an Aero decoder.
- * cb: callback for decoded messages */
-aero_decoder_t *aero_decoder_create(aero_msg_cb_t cb, void *user);
-
-/* Feed soft bits from BPSK or OQPSK demodulator.
- * channel_id: which channel these bits came from
- * baud_rate: 600, 1200, 8400, or 10500 */
-void aero_decoder_feed(aero_decoder_t *d, const float *soft_bits,
-                        int num_bits, int channel_id, int baud_rate);
-
-/* Destroy the decoder. */
-void aero_decoder_destroy(aero_decoder_t *d);
 
 #endif

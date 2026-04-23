@@ -49,7 +49,6 @@ int zmq_base_port = 6001;
 
 typedef struct {
     jaero_pmsk_demod_t       *pmsk;      /* continuous MSK demod for P-channel 600/1200 */
-    jaero_msk_demod_t        *burstmsk;  /* burst MSK demod for R/T channels (unused for now) */
     jaero_oqpsk_demod_t      *oqpsk;     /* burst OQPSK for 8400 baud */
     jaero_oqpsk_cont_demod_t *oqpsk_cont; /* continuous OQPSK for 10500 baud forward link */
     int channel_id;
@@ -476,14 +475,10 @@ Blocking_Queue decoded_queue;
 /* Atomic stats counters */
 atomic_ulong stat_samples_total = 0;
 atomic_ulong stat_stdc_frames = 0;
-atomic_ulong stat_aero_frames = 0;
 atomic_ulong stat_drops = 0;
 atomic_ulong stat_stdc_crc_ok = 0;
 atomic_ulong stat_stdc_crc_fail = 0;
-/* Legacy counters kept so aero_decode.c still links; unused now that
- * AeroL owns the decode chain. Remove when aero_decode.c is retired. */
 atomic_ulong stat_aero_crc_ok = 0;
-atomic_ulong stat_aero_crc_fail = 0;
 atomic_ulong stat_aero_bursts = 0;
 atomic_ulong stat_aero_msgs = 0;
 atomic_ulong stat_pos_adsc = 0;
@@ -491,8 +486,6 @@ atomic_ulong stat_pos_text = 0;
 atomic_ulong stat_pos_waypoint = 0;
 atomic_ulong stat_stdc_ber_sum = 0;   /* fixed-point * 10000 */
 atomic_ulong stat_stdc_ber_count = 0;
-atomic_ulong stat_aero_ber_sum = 0;
-atomic_ulong stat_aero_ber_count = 0;
 atomic_int stat_stdc_synced = 0;
 
 /* ---- Sample buffer management ---- */
@@ -1000,8 +993,6 @@ static void jaero_bits_cb(const unsigned char *bits, int num_bits,
     atomic_fetch_add(&stat_aero_bursts, 1);
 }
 
-/* ---- IQ dump for debugging ---- */
-
 /* ---- Channel output callback ---- */
 
 static void channel_output_cb(int channel_id, channel_type_t type,
@@ -1131,7 +1122,6 @@ static void channel_output_cb(int channel_id, channel_type_t type,
             jc->channel_id  = channel_id;
             jc->baud_rate   = baud;
             jc->pmsk        = NULL;
-            jc->burstmsk    = NULL;
             jc->oqpsk       = NULL;
             jc->oqpsk_cont  = NULL;
             jc->mixer_phase = 0.0;
@@ -1180,7 +1170,6 @@ static void channel_output_cb(int channel_id, channel_type_t type,
             jc->channel_id  = channel_id;
             jc->baud_rate   = 10500;
             jc->pmsk        = NULL;
-            jc->burstmsk    = NULL;
             jc->oqpsk       = NULL;
             jc->oqpsk_cont  = NULL;
             jc->mixer_phase = 0.0;
@@ -1221,7 +1210,6 @@ static void channel_output_cb(int channel_id, channel_type_t type,
             jc->channel_id  = channel_id;
             jc->baud_rate   = 8400;
             jc->pmsk        = NULL;
-            jc->burstmsk    = NULL;
             jc->oqpsk       = NULL;
             jc->mixer_phase = 0.0;
             jc->mixer_inc   = 2.0 * M_PI * AUDIO_CENTER_HZ / output_rate;
@@ -1728,8 +1716,6 @@ int main(int argc, char **argv) {
     for (int i = 0; i < num_jaero_chans; i++) {
         if (jaero_chans[i].pmsk)
             jaero_pmsk_destroy(jaero_chans[i].pmsk);
-        if (jaero_chans[i].burstmsk)
-            jaero_msk_destroy(jaero_chans[i].burstmsk);
         if (jaero_chans[i].oqpsk)
             jaero_oqpsk_destroy(jaero_chans[i].oqpsk);
         if (jaero_chans[i].oqpsk_cont)
