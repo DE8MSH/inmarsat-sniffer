@@ -8,6 +8,7 @@
 
 #define _GNU_SOURCE
 #include <err.h>
+#include <fcntl.h>
 #include <math.h>
 #include <pthread.h>
 #include <signal.h>
@@ -15,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
 #include <complex.h>
@@ -1170,6 +1172,24 @@ static void channel_output_cb(int channel_id, channel_type_t type,
 
 int main(int argc, char **argv) {
     self_pid = getpid();
+
+    /* If stderr is a pipe, set O_NONBLOCK on it so fprintf() calls on
+     * decode-path threads (per-channel workers emitting ACARS lines,
+     * main consumer emitting status) can't stall us when a downstream
+     * consumer of 2>&1 | somepipe slows down or dies. Same class of
+     * bug as the stdout-blocking hang fixed in cec6b4d. For a terminal
+     * or regular file, the flag either has no practical effect or is
+     * never triggered, so this only changes behavior in the pipe case.
+     * When a write would block, glibc returns EAGAIN and the line is
+     * dropped — we prefer losing log text over stalling decode. */
+    {
+        struct stat st;
+        if (fstat(STDERR_FILENO, &st) == 0 && S_ISFIFO(st.st_mode)) {
+            int flags = fcntl(STDERR_FILENO, F_GETFL, 0);
+            if (flags >= 0)
+                fcntl(STDERR_FILENO, F_SETFL, flags | O_NONBLOCK);
+        }
+    }
 
     parse_options(argc, argv);
 
