@@ -438,6 +438,7 @@ int vita49_enabled = 0;
 char *vita49_endpoint = NULL;
 int web_enabled = 0;
 int web_port = 8888;
+int spectrum_enabled = 0;
 int feed_enabled = 0;
 int jaero_format_enabled = 0;
 char *jaero_format_host = NULL;

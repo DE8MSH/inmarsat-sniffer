@@ -150,6 +150,8 @@ static void usage(int exitcode) {
 "\n"
 "Output:\n"
 "    --web[=PORT]            enable live web dashboard (default port: 8888)\n"
+"    --spectrum              also show the Spectrum tab (waterfall + constellation,\n"
+"                             click-to-tune). Implies --web.\n"
 "    --feed                  output JSON lines to stdout\n"
 "    --jaero-format[=HOST:PORT] JAERO text format 3 (stderr, or UDP if endpoint given)\n"
 "    --udp=HOST:PORT         send JSON messages via UDP (repeatable, max 4)\n"
@@ -246,6 +248,7 @@ void parse_options(int argc, char **argv) {
         OPT_AGC,
         OPT_SKIP_C_CHANNEL,
         OPT_OQPSK_LOCKINGBW,
+        OPT_SPECTRUM,
     };
 
     static const struct option longopts[] = {
@@ -263,6 +266,7 @@ void parse_options(int argc, char **argv) {
         { "satellite",          required_argument, NULL, OPT_SATELLITE },
         { "mode",               required_argument, NULL, OPT_MODE },
         { "web",                optional_argument, NULL, OPT_WEB },
+        { "spectrum",           no_argument,       NULL, OPT_SPECTRUM },
         { "feed",               no_argument,       NULL, OPT_FEED },
         { "zmq",                optional_argument, NULL, OPT_ZMQ },
         { "udp",                required_argument, NULL, OPT_UDP },
@@ -434,6 +438,15 @@ void parse_options(int argc, char **argv) {
             web_enabled = 1;
             if (optarg)
                 web_port = atoi(optarg);
+            break;
+
+        case OPT_SPECTRUM:
+            /* Implies --web: the Spectrum tab lives in the web UI. */
+            web_enabled = 1;
+            {
+                extern int spectrum_enabled;
+                spectrum_enabled = 1;
+            }
             break;
 
         case OPT_ZMQ:

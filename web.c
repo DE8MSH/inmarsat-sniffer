@@ -210,13 +210,15 @@ static int build_json(char *buf, int maxlen) {
     /* Expose operating mode so the HTML/JS can hide STD-C UI when we're in
      * aero-only mode (default). Avoids showing a dead tab with no data. */
     extern op_mode_t op_mode;
+    extern int spectrum_enabled;
     int stdc_enabled = (op_mode != MODE_AERO);
     extern unsigned long feed_get_json_drops(void);
     pos += snprintf(buf + pos, maxlen - pos,
-        "{\"t\":%.3f,\"stdc_enabled\":%s,\"total_acars\":%lu,"
-        "\"feed_drops\":%lu,",
-        now_unix(), stdc_enabled ? "true" : "false", state.total_acars,
-        feed_get_json_drops());
+        "{\"t\":%.3f,\"stdc_enabled\":%s,\"spectrum_enabled\":%s,"
+        "\"total_acars\":%lu,\"feed_drops\":%lu,",
+        now_unix(), stdc_enabled ? "true" : "false",
+        spectrum_enabled ? "true" : "false",
+        state.total_acars, feed_get_json_drops());
 
     /* STD-C messages */
     pos += snprintf(buf + pos, maxlen - pos, "\"stdc\":[");
@@ -389,12 +391,12 @@ static const char HTML_PAGE[] =
 "    <div class=\"tab active\" onclick=\"switchTab('acars')\">ACARS</div>\n"
 "    <div class=\"tab stdc-ui\" onclick=\"switchTab('stdc')\">STD-C</div>\n"
 "    <div class=\"tab\" onclick=\"switchTab('channels')\">Channels</div>\n"
-"    <div class=\"tab\" onclick=\"switchTab('spectrum')\">Spectrum</div>\n"
+"    <div class=\"tab spectrum-ui\" onclick=\"switchTab('spectrum')\">Spectrum</div>\n"
 "  </div>\n"
 "  <div id=\"tab-acars\" class=\"tab-content active\"><div id=\"aero-list\"></div></div>\n"
 "  <div id=\"tab-stdc\" class=\"tab-content\"><div id=\"stdc-list\"></div></div>\n"
 "  <div id=\"tab-channels\" class=\"tab-content\"><div id=\"ch-panel\" style=\"font-size:10px;line-height:1.6\"></div></div>\n"
-"  <div id=\"tab-spectrum\" class=\"tab-content\">\n"
+"  <div id=\"tab-spectrum\" class=\"tab-content spectrum-ui\">\n"
 "    <div style=\"display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px\">\n"
 "      <label>Channel: <select id=\"spec-ch\" style=\"background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:3px;padding:2px\"></select></label>\n"
 "      <span id=\"spec-info\" style=\"color:#94a3b8\"></span>\n"
@@ -404,7 +406,6 @@ static const char HTML_PAGE[] =
 "    <canvas id=\"spec-canvas\" width=\"512\" height=\"180\" style=\"width:100%;height:180px;background:#0b1220;border:1px solid #334155;border-radius:4px;cursor:crosshair;display:block\"></canvas>\n"
 "    <div style=\"font-size:10px;color:#64748b;margin:10px 0 4px 0\">Constellation \\u2014 post-matched-filter I/Q points. Tight clusters = locked, smear = not.</div>\n"
 "    <canvas id=\"const-canvas\" width=\"260\" height=\"260\" style=\"width:100%;max-width:260px;aspect-ratio:1/1;background:#0b1220;border:1px solid #334155;border-radius:4px;display:block;margin:0 auto\"></canvas>\n"
-"    <div id=\"spec-detail\" style=\"margin-top:10px;padding:8px 10px;background:#0f172a;border:1px solid #334155;border-radius:4px;font-size:11px;line-height:1.6\"></div>\n"
 "  </div>\n"
 "</div>\n"
 "<script>"
@@ -539,33 +540,6 @@ static const char HTML_PAGE[] =
 "  document.getElementById('spec-info').innerHTML=info;"
 "  var btn=document.getElementById('spec-auto');"
 "  if(btn){btn.disabled=d.afc?true:false;btn.style.opacity=d.afc?'0.5':'1'}"
-/* Detail panel below: combine spectrum snapshot with latest channel
- * stats from the SSE update (cached in window.__lastChannels). */
-"  var chInfo=null;"
-"  if(window.__lastChannels){"
-"    for(var ci=0;ci<window.__lastChannels.length;ci++){"
-"      if(window.__lastChannels[ci].ch===d.ch){chInfo=window.__lastChannels[ci];break}"
-"    }"
-"  }"
-"  var detail=document.getElementById('spec-detail');if(!detail)return;"
-"  var lock=chInfo?(chInfo.lock?'<span style=\"color:#22c55e\">locked</span>':'<span style=\"color:#ef4444\">unlocked</span>'):'\\u2014';"
-"  var ebno=chInfo?chInfo.ebno.toFixed(1)+' dB':'\\u2014';"
-"  var mse=chInfo?chInfo.mse.toFixed(3):'\\u2014';"
-"  var msgs=chInfo?chInfo.msgs:'\\u2014';"
-"  var age=chInfo&&chInfo.age>=0?chInfo.age.toFixed(0)+'s':'never';"
-"  function kv(k,v){return '<div style=\"display:flex;justify-content:space-between\">'+"
-"    '<span style=\"color:#64748b\">'+k+'</span>'+"
-"    '<span style=\"color:#e2e8f0\">'+v+'</span></div>'}"
-"  detail.innerHTML="
-"    kv('Channel','ch'+d.ch+' ('+d.baud+' baud)')"
-"    +kv('Sample rate',(d.fs/1000).toFixed(1)+' kHz')"
-"    +kv('Tune',d.mixer_hz.toFixed(0)+' Hz ['+(d.afc?'<span style=\"color:#fbbf24\">AFC</span>':'<span style=\"color:#ef4444\">Manual</span>')+']')"
-"    +kv('AFC search',d.lockingbw>0?d.lockingbw.toFixed(0)+' Hz':'\\u2014')"
-"    +kv('Lock state',lock)"
-"    +kv('Eb/No',ebno)"
-"    +kv('MSE',mse)"
-"    +kv('Messages',msgs)"
-"    +kv('Last message',age);"
 "}"
 /* Populate channel dropdown from latest state snapshot */
 "function updateSpecChannels(channels){"
@@ -646,6 +620,8 @@ static const char HTML_PAGE[] =
 "/* Hide STD-C tab and counter when not in a mode that decodes it */"
 "var stdcUI=document.querySelectorAll('.stdc-ui');"
 "for(var i=0;i<stdcUI.length;i++)stdcUI[i].style.display=d.stdc_enabled?'':'none';"
+"var specUI=document.querySelectorAll('.spectrum-ui');"
+"for(var j=0;j<specUI.length;j++)specUI[j].style.display=d.spectrum_enabled?'':'none';"
 "document.getElementById('status').style.color='#22c55e';"
 "document.getElementById('status').textContent='live';"
 "if(d.channels){"
@@ -674,7 +650,6 @@ static const char HTML_PAGE[] =
 "  document.getElementById('n-ac').textContent=locked+'/'+d.channels.length;"
 "  cp.innerHTML=html;"
 "  updateSpecChannels(d.channels);"
-"  window.__lastChannels=d.channels;"
 "}"
 "if(d.aircraft){d.aircraft.forEach(function(a){"
 "  var key=a.reg+'|'+a.last_seen.toFixed(1);"
@@ -852,6 +827,8 @@ static void *client_thread(void *arg) {
         return NULL;
     }
 
+    extern int spectrum_enabled;
+
     if (strcmp(path, "/") == 0) {
         send_response(fd, "200 OK", "text/html",
                        HTML_PAGE, (int)sizeof(HTML_PAGE) - 1);
@@ -866,7 +843,7 @@ static void *client_thread(void *arg) {
             free(json);
         }
         close(fd);
-    } else if (strncmp(path, "/api/spectrum", 13) == 0) {
+    } else if (strncmp(path, "/api/spectrum", 13) == 0 && spectrum_enabled) {
         /* /api/spectrum?ch=N&bins=512
          * Returns mag-dB array 0..Fs/2 + tune info + lockingbw + AFC state. */
         extern int web_get_spectrum_by_channel(int, float *, int,
@@ -918,7 +895,7 @@ static void *client_thread(void *arg) {
         free(mags);
         free(body);
         close(fd);
-    } else if (strncmp(path, "/api/constellation", 18) == 0) {
+    } else if (strncmp(path, "/api/constellation", 18) == 0 && spectrum_enabled) {
         /* /api/constellation?ch=N — returns up to 300 I/Q points from
          * the demod's post-matched-filter ring buffer. Used by the
          * Spectrum tab scatter plot. */
@@ -951,7 +928,7 @@ static void *client_thread(void *arg) {
         free(iq);
         free(body);
         close(fd);
-    } else if (strncmp(path, "/api/tune", 9) == 0) {
+    } else if (strncmp(path, "/api/tune", 9) == 0 && spectrum_enabled) {
         /* /api/tune?ch=N[&hz=1234.5][&afc=0|1]
          * Setting hz automatically disables AFC so the tune sticks
          * (unless afc=1 also passed). Sending only afc=1 re-enables AFC. */
