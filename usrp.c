@@ -1,8 +1,6 @@
 /*
- * USRP (UHD) native backend for inmarsat-sniffer
- *
- * Ported from iridium-sniffer's usrp.c (same author + license), simplified
- * (no clock/time-source enum) and adapted to our sample_buf_t.
+ * USRP (UHD) native backend for inmarsat-sniffer.
+ * Ported from iridium-sniffer's usrp.c, simplified for sample_buf_t.
  *
  * Copyright (c) 2026 CEMAXECUTER LLC
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -157,12 +155,8 @@ void *usrp_stream_thread(void *arg)
     uhd_rx_streamer_handle rx;
     uhd_rx_metadata_handle md;
     size_t channel = 0, max_samples, rx_samples;
-    /* B210 has a 12-bit ADC (plus noise floor ~8 dB NF at L-band). Using
-     * sc8 on the wire would quantise to 8 bits, throwing away ~24 dB of
-     * dynamic range. sc16 preserves all 12 ADC bits; cpu_format=fc32 lets
-     * the rest of our pipeline consume floats the same way rtlsdr/bladerf
-     * backends do. USB 2.0 bandwidth is still plenty at <10 MB/s for our
-     * sample rates. */
+    /* sc16 on the wire preserves the 12-bit ADC; fc32 on the CPU side
+     * matches the float path used by other backends. */
     uhd_stream_args_t stream_args = {
         .cpu_format = "fc32",
         .otw_format = "sc16",

@@ -1,19 +1,7 @@
 /*
- * ZMQ audio output for JAERO compatibility
- *
- * Publishes per-channel audio as int16 PCM via ZMQ PUB sockets,
- * matching SDRReceiver's exact audio format so JAERO can consume it
- * identically to an SDRReceiver → JAERO setup:
- *   Frame: [topic string] [uint32 rate] [int16[] samples]
- *
- * Audio generation mirrors SDRReceiver's vfo::usb_demod():
- *   1. Complex baseband IQ from channelizer (signal at DC)
- *   2. Optional BFO mix to offset (our audio_center_hz)
- *   3. 125-tap Hilbert FIR on imaginary part + 62-sample delay on real
- *   4. audio = Delay(re) - Hilbert(im)   (USB demodulation)
- *   5. Scale to int16
- *
- * Hilbert FIR and Delay are ported from SDRReceiver (MIT, Jeroen Beijer).
+ * ZMQ audio output — SDRReceiver-compatible per-channel USB audio for JAERO.
+ * Frame: [topic] [uint32 rate] [int16 samples]. Hilbert FIR + delay line
+ * port from SDRReceiver (MIT, Jeroen Beijer).
  *
  * Copyright (c) 2026 CEMAXECUTER LLC
  * Portions Copyright (c) 2021 Jeroen Beijer (SDRReceiver, MIT)
@@ -136,9 +124,7 @@ static zmq_chan_t *get_channel(int channel_id, double samp_rate,
     ch->socket = zmq_pub;
     ch->hilb_idx = 0;
     ch->delay_idx = 0;
-    /* Our channelizer output amplitude is ~100x smaller than SDRReceiver's
-     * main_vfo output, so we scale up. Empirically tuned to match the
-     * int16 audio level that fills JAERO's FFT and drives its AGC. */
+    /* Empirical gain to match SDRReceiver's int16 audio level into JAERO. */
     ch->gain = (audio_center_hz >= 4000.0) ? 3.0 : 5.0;
     snprintf(ch->topic, sizeof(ch->topic), "VFO%02d", channel_id);
     fprintf(stderr, "ZMQ: channel %d topic=%s audio_center=%.0f Hz gain=%.3f\n",
@@ -207,12 +193,8 @@ void zmq_audio_send(int channel_id, const float complex *samples,
         pcm[i] = (int16_t)scaled;
     }
 
-    /* Send: [topic] [rate] [samples] — matches SDRReceiver's ZmqPublisher.
-     * ZMQ_DONTWAIT on all three: PUB sockets drop silently on HWM
-     * anyway, but DONTWAIT also guarantees we never block on internal
-     * queue handoff during subscriber churn. Runs on the main
-     * channelizer thread for every buffer on every active channel, so
-     * any hitch here stalls the whole decode. */
+    /* [topic][rate][samples]. DONTWAIT so subscriber churn never blocks
+     * the channelizer thread. */
     uint32_t rate = (uint32_t)samp_rate;
     zmq_send(ch->socket, ch->topic, strlen(ch->topic), ZMQ_SNDMORE | ZMQ_DONTWAIT);
     zmq_send(ch->socket, &rate, sizeof(rate), ZMQ_SNDMORE | ZMQ_DONTWAIT);

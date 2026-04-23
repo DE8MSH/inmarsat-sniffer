@@ -235,10 +235,8 @@ static double target_output_rate(channel_type_t type) {
     }
 }
 
-/* Group channels that should share a stage-1 band. MSK 600/1200 share
- * (same spectral cluster, same modulation family). OQPSK 10500 and 8400
- * have different RRC α so they're kept separate — also avoids pulling
- * the band centroid between two distinct clusters. */
+/* Channels share a stage-1 band only if modulation family matches
+ * (OQPSK 10500 and 8400 differ in RRC α so they're kept separate). */
 static int modulation_family(channel_type_t type) {
     switch (type) {
     case CHAN_STDC_EGC:   return 0;  /* BPSK */
@@ -250,9 +248,7 @@ static int modulation_family(channel_type_t type) {
     }
 }
 
-/* Target intermediate rate for stage-1 based on channel type.
- * OQPSK channels need a narrower intermediate band for cleaner stage-2
- * decimation; MSK/BPSK channels tolerate a wider intermediate band. */
+/* Stage-1 intermediate rate: narrower for OQPSK, wider for MSK/BPSK. */
 static double target_intermediate_rate(channel_type_t type) {
     switch (type) {
     case CHAN_AERO_10500:
@@ -279,9 +275,8 @@ static int largest_factor_leq(int n, int limit) {
     return best;
 }
 
-/* Per-channel digital gain. Unity for all — the feedIQ path in
- * the demodulators already has a 5.0x gain for int16 audio scaling.
- * Adding channelizer gain on top caused OQPSK clipping on strong signals. */
+/* Per-channel digital gain. Unity: the demodulators' feedIQ path
+ * already applies 5.0x scaling. */
 static float channel_gain(channel_type_t type) {
     (void)type;
     return 1.0f;
@@ -310,9 +305,7 @@ static int init_band(band_state_t *b, double center_freq,
     if (s1_decim < 1) s1_decim = 1;
     b->intermediate_rate = samp_rate / s1_decim;
 
-    /* NCO: mix band center to DC relative to SDR center.
-     * nco_freq is set when we know the SDR center; caller sets it after. */
-    b->nco_freq   = 0.0;   /* caller will fill */
+    b->nco_freq   = 0.0;   /* caller fills after SDR center is known */
     b->nco_phasor = 1.0f;
     b->nco_current = 1.0f;
 
@@ -693,11 +686,8 @@ void channelizer_adjust_center(channelizer_t *ch, double offset_hz) {
 void channelizer_finalize(channelizer_t *ch) {
     if (!ch) return;
 
-    /* For each band, compute the centroid of its channel frequencies,
-     * update the band center, and rebalance each channel's per-channel
-     * NCO to the new center. This avoids placing any channel at DC
-     * (where DC offset and 1/f noise cause artifacts) and symmetrizes
-     * filter response across the channel cluster. */
+    /* Recenter each band's NCO on the centroid of its member channels so
+     * no channel sits at DC (where DC offset and 1/f noise hurt). */
     for (int b = 0; b < ch->num_bands; b++) {
         band_state_t *bd = &ch->bands[b];
         if (!bd->active || bd->num_channels == 0) continue;

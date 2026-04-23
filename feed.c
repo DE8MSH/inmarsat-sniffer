@@ -37,13 +37,8 @@ static int udp_sockets[UDP_MAX];
 static struct sockaddr_in udp_addrs[UDP_MAX];
 static int initialized = 0;
 
-/* ---- Stdout writer thread ----
- * fwrite(stdout) blocks when a downstream pipe consumer stalls and the
- * 64KB kernel pipe buffer fills. Historically this stalled whichever
- * thread produced the message — for STD-C, that's the main channelizer
- * consumer, so samples_queue would fill and stat_drops would climb to
- * tens of thousands while decoding froze. Decouple the decode pipeline
- * from stdout by handing JSON strings to a dedicated writer thread. */
+/* Writer thread keeps stdout backpressure off the decode path.
+ * Bounded queue, drop-on-full, tracked in stat_feed_drops. */
 #define FEED_QUEUE_CAPACITY 256
 typedef struct {
     char *data;
@@ -334,38 +329,26 @@ void feed_aero_message(const aero_message_t *msg) {
     extern char *station_id;
     const char *sid = station_id ? station_id : "";
 
-    /* Reg field — strip our leading dot to match JAERO JSONdump convention
-     * ("reg": "OO-SFC", not ".OO-SFC"). */
+    /* Strip leading dot from reg to match JAERO JSONdump convention. */
     const char *reg = msg->reg;
     if (reg && reg[0] == '.') reg++;
 
-    /* AES/GES hex, uppercase, zero-padded */
     char aes_hex[8], ges_hex[4];
     snprintf(aes_hex, sizeof(aes_hex), "%06X", msg->aes_id & 0xFFFFFFu);
     snprintf(ges_hex, sizeof(ges_hex), "%02X", msg->ges_id & 0xFFu);
 
-    /* src / dst swap on direction: downlink=aircraft->ground means src=aes,
-     * dst=ges. uplink (our typical P-channel decode) means src=ges, dst=aes.
-     * Matches JAERO mainwindow.cpp JSONdump src/dst assignment. */
+    /* src/dst assignment matches JAERO: downlink = AES→GES, uplink reversed. */
     const char *src_addr = msg->downlink ? aes_hex : ges_hex;
     const char *src_type = msg->downlink ? "Aircraft Earth Station" : "Ground Earth Station";
     const char *dst_addr = msg->downlink ? ges_hex : aes_hex;
     const char *dst_type = msg->downlink ? "Ground Earth Station" : "Aircraft Earth Station";
 
-    /* Build nested JSONdump-compliant object. Fields match JAERO 1.0.4.11+
-     * mainwindow.cpp ACARSitem_to_HumanText() "JSONdump" branch. The
-     * arinc622 sub-object, when present, is the libacars proto-tree JSON
-     * serialisation — the author-provided schema in issue #10 shows an
-     * arinc622 object; we pass through whatever libacars produced rather
-     * than reshaping, since Airframes/Acarshub already consume libacars
-     * output via dumpvdl2. */
+    /* JSONdump-compatible object; arinc622 is passed through as libacars
+     * produced it (Acarshub already consumes that shape from dumpvdl2). */
     const char *arinc = msg->arinc622_json;
     int len = snprintf(buf, sizeof(buf),
         "{"
-            /* app.name must literally be "JAERO" for Acarshub's dumpJSON
-             * parser to extract fields — anything else and Acarshub stores
-             * empty strings (per issue #10 testing). Same quirk iridium-sniffer
-             * had to work around. */
+            /* app.name MUST be "JAERO" — Acarshub's parser keys on it. */
             "\"app\":{\"name\":\"JAERO\",\"ver\":\"inmarsat-sniffer VFO%02d\"},"
             "\"isu\":{"
                 "\"acars\":{"

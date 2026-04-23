@@ -68,10 +68,7 @@ static struct {
     aircraft_entry_t aircraft[MAX_AIRCRAFT];
     int num_aircraft;
 
-    /* Running total of ACARS messages ever received since startup. Shown
-     * as the 'ACARS' counter in the dashboard header. Previously the JS
-     * fell back to aircraft-count when this field was missing, which only
-     * reflected unique tail numbers — confusing when traffic was heavy. */
+    /* Cumulative ACARS messages since startup (exposed via JSON). */
     unsigned long total_acars;
 } state;
 
@@ -207,8 +204,7 @@ static int build_json(char *buf, int maxlen) {
     pthread_mutex_lock(&state.lock);
 
     int pos = 0;
-    /* Expose operating mode so the HTML/JS can hide STD-C UI when we're in
-     * aero-only mode (default). Avoids showing a dead tab with no data. */
+    /* Expose op_mode so the JS can hide the STD-C tab in aero-only mode. */
     extern op_mode_t op_mode;
     extern int spectrum_enabled;
     int stdc_enabled = (op_mode != MODE_AERO);
@@ -419,12 +415,7 @@ static const char HTML_PAGE[] =
 "  if(name==='spectrum'){startSpectrum()}else{stopSpectrum()}"
 "}\n"
 
-/* --- Spectrum tab polling + rendering ---
- * Waterfall view: full 0..Fs/2 audio band on the X axis, time scrolling
- * top-to-bottom. Color coded by magnitude (dB). Signals show up as
- * persistent vertical stripes which is much easier to read than a
- * twitching single-frame spectrum. Click on any column to retune the
- * demod to that audio Hz (auto-disables AFC). */
+/* Spectrum tab: waterfall (time × freq × dB) + constellation, 4 Hz poll. */
 "var specTimer=null,specFs=0,specLastCh=null;"
 "function startSpectrum(){"
 "  if(specTimer)return;"
@@ -481,11 +472,8 @@ static const char HTML_PAGE[] =
 "    ctx.fillRect(px-1,py-1,2,2);"
 "  }"
 "}"
-/* dB -> RGB. Magma-ish with compressed dynamic range: -35 dB maps to
- * black so the noise floor is dark and signal peaks stand out, 0 dB
- * maps to yellow. Within the 35 dB visible range: black → purple →
- * red → orange → yellow. Increases contrast between signal and noise
- * floor compared to a full -80..0 dB ramp. */
+/* dB → RGB magma ramp over -35..0 dB. Narrow range makes signal peaks
+ * stand out against a dark noise floor. */
 "function dbColor(db){"
 "  var t=(db+35)/35;if(t<0)t=0;if(t>1)t=1;"
 "  var r,g,b;"
