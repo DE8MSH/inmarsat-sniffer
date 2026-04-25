@@ -387,7 +387,7 @@ static int extract_adsc_position(la_adsc_msg_t *adsc,
 /* ---- Global configuration ---- */
 double samp_rate = 0;         /* 0 = auto from satellite table */
 double center_freq = 0;
-int ppm_correction = 0;       /* RTL-SDR frequency correction in PPM */
+double ppm_correction = 0;    /* user-supplied SDR PPM error; 0 = use auto-cal */
 int verbose = 0;
 int live = 0;
 iq_format_t iq_format = FMT_CI8;
@@ -1040,8 +1040,9 @@ static void channel_output_cb(int channel_id, channel_type_t type,
         return;
     }
 
-    /* Startup-only PPM auto-cal from the first aero channel's carrier. */
-    {
+    /* Startup-only PPM auto-cal from the first aero channel's carrier.
+     * Skipped when --ppm is set — the user supplied the answer already. */
+    if (ppm_correction == 0.0) {
         static float complex cal_buf[1024];
         static int cal_n = 0;
         static int cal_ch = -1;
@@ -1570,6 +1571,22 @@ int main(int argc, char **argv) {
 
         /* Rebalance bands so no channel sits at DC (where offset/1/f noise hurt) */
         channelizer_finalize(channelizer);
+
+        /* Universal --ppm shift: RTL-SDR tuned its TCXO at backend setup,
+         * but every other backend hits the channelizer with an uncorrected
+         * carrier. Apply ppm × center_freq as a software offset here so
+         * --ppm works the same way on all SDRs. */
+#ifdef HAVE_RTLSDR
+        int rtl_active = (rtl_dev_index >= 0);
+#else
+        int rtl_active = 0;
+#endif
+        if (ppm_correction != 0.0 && !rtl_active) {
+            double shift_hz = ppm_correction * center_freq * 1e-6;
+            channelizer_adjust_center(channelizer, shift_hz);
+            fprintf(stderr, "PPM correction: %.2f ppm (%.0f Hz at %.3f MHz)\n",
+                    ppm_correction, shift_hz, center_freq / 1e6);
+        }
 
         /* STD-C demod/decode chain if an EGC channel is active */
         for (int i = 0; i < sat->num_channels; i++) {

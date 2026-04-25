@@ -73,11 +73,13 @@ void *rtlsdr_backend_setup(int dev_index) {
         samp_rate = (double)actual_rate;
     }
 
-    /* PPM correction */
-    extern int ppm_correction;
-    if (ppm_correction != 0) {
-        rtlsdr_set_freq_correction(dev, ppm_correction);
-        fprintf(stderr, "RTL-SDR: PPM correction: %d\n", ppm_correction);
+    /* PPM correction — RTL-SDR tunes its TCXO scaling (rounded to int).
+     * Other backends apply the same value as a software channelizer
+     * shift in main.c since their APIs don't expose a per-device PPM. */
+    extern double ppm_correction;
+    if (ppm_correction != 0.0) {
+        rtlsdr_set_freq_correction(dev, (int)(ppm_correction + 0.5));
+        fprintf(stderr, "RTL-SDR: PPM correction: %.2f\n", ppm_correction);
     }
 
     /* Center frequency */

@@ -319,6 +319,39 @@ SDR/file/VITA49 --> channelizer (two-stage DDC per channel, SIMD-accelerated)
 
 Channels are automatically filtered based on your SDR's actual bandwidth -- the channelizer only adds channels whose center frequency falls within the captured spectrum. Channels outside the bandwidth are skipped (visible with `-v`). This means an RTL-SDR at 2.4 MHz simply decodes fewer channels, not incorrectly -- no wasted CPU on out-of-band noise. Center frequency and sample rate are auto-computed from the satellite table unless you override with `-c` and `-r`.
 
+## Frequency correction (`--ppm` and auto-cal)
+
+Every SDR has a small TCXO offset -- typically tens to a few hundred Hz at L-band. The decoder corrects for it two ways:
+
+**Auto-cal (default, runs once at startup)**
+
+If `--ppm` is *not* set, the decoder measures the carrier offset of the first aero channel against where the satellite says it should be, then shifts the channelizer's mix point in software to match. The startup banner prints something like:
+
+```
+Auto-cal: carrier offset 120 Hz on ch1, adjusting center freq
+Channelizer: adjusted center by 120 Hz (new: 1545.620 MHz)
+```
+
+Triggers only when the offset exceeds 50 Hz (smaller than that is treated as already centered). Runs once per session -- there's no periodic recalibration.
+
+A "good" SDR at L-band typically reads **100-150 Hz** of offset. Up to about a kilohertz is normal; multi-kHz offsets suggest either a poorly-trimmed crystal or that the auto-cal locked onto a noise spike, in which case the manual `--ppm` knob below is the answer.
+
+**Manual `--ppm=N.NN`**
+
+If you already know your SDR's PPM error (from `rtl_test`, `kalibrate-rtl`, or repeated runs of auto-cal), pass it explicitly. This:
+
+- On **RTL-SDR**, retunes the device's hardware TCXO scaling via `rtlsdr_set_freq_correction()` -- best long-term stability since every retune benefits, including thermal drift compensation.
+- On **HackRF, BladeRF, USRP, SDRplay, Airspy, SoapySDR**, applies the same value as a software shift at the channelizer (`offset_hz = ppm * center_freq / 1e6`). The hardware is left alone but the resulting baseband is correct at L-band.
+- **Disables auto-cal** for that run -- if you've supplied the answer, the decoder won't re-measure and risk fighting your value.
+
+PPM and a fixed Hz offset are equivalent at our single observation frequency: `1 ppm ≈ 1545 Hz` at L-band, so a 100 Hz observed offset is roughly `0.065 ppm`.
+
+```bash
+inmarsat-sniffer -i sdrplay --satellite=4F3 --ppm=0.07
+```
+
+Pick `--ppm` if you want repeatable behavior across runs (auto-cal varies by ±50 Hz between sessions because it depends on which sample is locked first), or if you operate on a satellite/band where auto-cal struggles to find a clean carrier.
+
 ## Current status
 
 **Satellites verified live:**

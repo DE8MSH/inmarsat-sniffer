@@ -55,7 +55,7 @@ extern int soapy_gain_elem_count;
 
 extern double soapy_gain_val;
 extern int bias_tee;
-extern int ppm_correction;
+extern double ppm_correction;
 
 #ifdef HAVE_SDRPLAY
 extern char *sdrplay_serial;
@@ -125,6 +125,9 @@ static void usage(int exitcode) {
 "                             hackrf[-SERIAL], bladerfN, usrp-PRODUCT-SERIAL\n"
 "    -r, --sample-rate=HZ    sample rate in Hz (default: auto from satellite)\n"
 "    -B, --bias-tee          enable bias tee power\n"
+"    -p, --ppm=N.NN          SDR frequency error in PPM. RTL-SDR tunes its\n"
+"                             TCXO; other backends apply it as a software\n"
+"                             shift at the channelizer. Disables auto-cal.\n"
 "    --agc                   enable RTL-SDR AGC mode\n"
 "    --soapy-gain=GAIN       SoapySDR overall gain in dB (default: 40)\n"
 "    --soapy-gain-element=NAME:VAL  per-element gain (repeatable)\n"
@@ -379,7 +382,7 @@ void parse_options(int argc, char **argv) {
             break;
 
         case 'p':
-            ppm_correction = atoi(optarg);
+            ppm_correction = strtod(optarg, NULL);
             break;
 
         case 'B':
