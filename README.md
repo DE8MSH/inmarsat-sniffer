@@ -319,6 +319,47 @@ SDR/file/VITA49 --> channelizer (two-stage DDC per channel, SIMD-accelerated)
 
 Channels are automatically filtered based on your SDR's actual bandwidth -- the channelizer only adds channels whose center frequency falls within the captured spectrum. Channels outside the bandwidth are skipped (visible with `-v`). This means an RTL-SDR at 2.4 MHz simply decodes fewer channels, not incorrectly -- no wasted CPU on out-of-band noise. Center frequency and sample rate are auto-computed from the satellite table unless you override with `-c` and `-r`.
 
+## Position sources
+
+Aircraft positions on the map come from three independent extractors
+applied in order to every decoded Aero ACARS message. The shutdown
+banner prints all three counters separately:
+
+```
+Position fixes: 12 binary ADS-C, 47 text-coord, 18 waypoint-name
+```
+
+1. **Binary ADS-C** -- ARINC-622 contract reports decoded by libacars
+   (`la_proto_tree_find_adsc`). Returns a structured tag list with
+   explicit lat/lon/alt/heading/groundspeed. This is the most precise
+   source and the closest to "ADS-C" as the term is used in industry,
+   but it requires the aircraft to have an active ADS-C contract on
+   Inmarsat -- many carriers route ADS-C over VDL-2 or HF instead and
+   use Inmarsat only for general ACARS. **Zero ADS-C fixes in a session
+   doesn't mean the decoder is broken** -- just that no aircraft in
+   beam happened to be sending binary contracts during that window.
+
+2. **Text-coord** -- regex-extracted coordinates from human-readable
+   FANS-1/A H1 message bodies (`acars_extract_text_position()`). Two
+   formats are recognised: `POS[NS]ddddd[EW]dddddd` (Inmarsat POS
+   prefix, degrees * 1000) and `[NS]dddmm[EW]dddmm` (degrees + tenths
+   of a minute, e.g. `N33521W084123` -> 33d52.1'N, 84d12.3'W). Many
+   carrier-specific encodings exist beyond these two; if you see H1
+   traffic that consistently doesn't extract, an additional parser may
+   be worth adding.
+
+3. **Waypoint-name** -- looks up 5-letter ICAO fix identifiers found in
+   the message body against `data/waypoints.csv` (~125k FAA + global
+   fixes) and runtime-learned waypoints harvested from FPN flight-plan
+   messages. Approximate -- the aircraft is somewhere near that fix,
+   not on it -- but useful when the message body has no explicit
+   coordinates and just names the next waypoint (common on NAT tracks).
+
+Each message tries the extractors in order and stops at the first hit,
+so the three counters never overlap. Many H1 messages aren't position
+reports at all (REQPOS, REQPRG, AT1 logon, AFN handshake) and produce
+zero fixes -- that's expected.
+
 ## Frequency correction (`--ppm` and auto-cal)
 
 Every SDR has a small TCXO offset -- typically tens to a few hundred Hz at L-band. The decoder corrects for it two ways:

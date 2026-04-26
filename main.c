@@ -1677,7 +1677,8 @@ int main(int argc, char **argv) {
     }
 
     fprintf(stderr, "\nShutting down...\n");
-    fprintf(stderr, "Positions: %lu ADS-C, %lu text, %lu waypoint\n",
+    /* Three independent extraction paths, see README "Position sources". */
+    fprintf(stderr, "Position fixes: %lu binary ADS-C, %lu text-coord, %lu waypoint-name\n",
             atomic_load(&stat_pos_adsc),
             atomic_load(&stat_pos_text),
             atomic_load(&stat_pos_waypoint));

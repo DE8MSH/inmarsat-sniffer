@@ -296,7 +296,11 @@ int acars_extract_waypoint_position(const char *label, const char *text,
                 return 1;
         }
 
-        while (*scan && *scan != ',' && *scan != ' ' && *scan != '/')
+        /* Advance to the next delimiter — must include '.' to match the
+         * top-of-loop skip set. Without '.' here, "240050.BNJEE" would
+         * tokenize as one chunk and the BNJEE lookup never fires. */
+        while (*scan && *scan != ',' && *scan != ' ' &&
+               *scan != '/' && *scan != '.')
             scan++;
     }
     return 0;
