@@ -121,13 +121,17 @@ void *airspy_backend_setup(uint64_t serial) {
     if (r != AIRSPY_SUCCESS)
         errx(1, "Airspy: set_freq failed (%s)", airspy_error_name(r));
 
-    /* Gain. Use linearity_gain (0..21) as the single knob — simpler
-     * than tuning LNA/MIX/VGA separately and what Airspy's own
-     * airspy_rx tool defaults to. L-band needs most of it; default 19
-     * lines up with observed live decodes. --soapy-gain (passed in dB)
-     * is mapped linearly onto the 0..21 linearity range. */
+    /* Gain priority: --airspy-gain (native 0..21) wins, then explicit
+     * --soapy-gain (mapped from dB), else Airspy's working default of 19.
+     * Issue #15: previously the default was unreachable because the
+     * global soapy_gain_val starts at 40, so the dB-mapping branch
+     * always fired and produced 17 even when nothing was passed. */
+    extern int airspy_gain_val;
+    extern int soapy_gain_explicit;
     int lg = 19;
-    if (soapy_gain_val > 0) {
+    if (airspy_gain_val >= 0) {
+        lg = airspy_gain_val;
+    } else if (soapy_gain_explicit) {
         lg = (int)((soapy_gain_val / 49.6) * 21.0 + 0.5);
         if (lg < 0)  lg = 0;
         if (lg > 21) lg = 21;

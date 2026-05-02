@@ -417,6 +417,8 @@ int soapy_gain_elem_count = 0;
 #endif
 
 double soapy_gain_val = 40.0;
+int    soapy_gain_explicit = 0;  /* 1 once --soapy-gain is parsed */
+int    airspy_gain_val = -1;     /* native linearity_gain 0..21; <0 = default */
 int bias_tee = 0;
 
 #ifdef HAVE_SDRPLAY

@@ -139,6 +139,8 @@ static void usage(int exitcode) {
 "    --hackrf-amp            enable HackRF 14dB RF amplifier\n"
 "    --bladerf-gain=DB       BladeRF RX gain in dB (default: 40)\n"
 "    --usrp-gain=DB          USRP RX gain in dB (default: 40)\n"
+"    --airspy-gain=N         Airspy native linearity_gain 0-21 (default: 19).\n"
+"                             Overrides --soapy-gain on Airspy.\n"
 "\n"
 "Satellite:\n"
 "    --satellite=SAT         satellite designator: 4F3, 3F5, AF1, F1\n"
@@ -251,6 +253,7 @@ void parse_options(int argc, char **argv) {
         OPT_HACKRF_AMP,
         OPT_BLADERF_GAIN,
         OPT_USRP_GAIN,
+        OPT_AIRSPY_GAIN,
         OPT_MQTT,
         OPT_MQTT_USER,
         OPT_MQTT_PASS,
@@ -300,6 +303,7 @@ void parse_options(int argc, char **argv) {
 #endif
 #ifdef HAVE_UHD
         { "usrp-gain",          required_argument, NULL, OPT_USRP_GAIN },
+        { "airspy-gain",        required_argument, NULL, OPT_AIRSPY_GAIN },
 #endif
         { "mqtt",               required_argument, NULL, OPT_MQTT },
         { "mqtt-user",          required_argument, NULL, OPT_MQTT_USER },
@@ -531,6 +535,17 @@ void parse_options(int argc, char **argv) {
             break;
 #endif
 
+#ifdef HAVE_AIRSPY
+        case OPT_AIRSPY_GAIN: {
+            extern int airspy_gain_val;
+            int g = atoi(optarg);
+            if (g < 0)  g = 0;
+            if (g > 21) g = 21;
+            airspy_gain_val = g;
+            break;
+        }
+#endif
+
         case OPT_MQTT: {
 #ifdef HAVE_MQTT
             mqtt_enabled = 1;
@@ -608,9 +623,12 @@ void parse_options(int argc, char **argv) {
             break;
         }
 
-        case OPT_SOAPY_GAIN:
+        case OPT_SOAPY_GAIN: {
+            extern int soapy_gain_explicit;
             soapy_gain_val = atof(optarg);
+            soapy_gain_explicit = 1;
             break;
+        }
 
 #ifdef HAVE_SDRPLAY
         case OPT_SDRPLAY_GAIN:
